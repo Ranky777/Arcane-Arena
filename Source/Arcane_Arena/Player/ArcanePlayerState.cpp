@@ -3,8 +3,8 @@
 
 #include "ArcanePlayerState.h"
 
-#include "ArcaneAbilitySystemComponent.h"
-#include "ArcaneAttributeSet.h"
+#include "GAS/ArcaneAbilitySystemComponent.h"
+#include "GAS/ArcaneAttributeSet.h"
 
 AArcanePlayerState::AArcanePlayerState()
 {

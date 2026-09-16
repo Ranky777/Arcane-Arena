@@ -3,7 +3,7 @@
 
 #include "ArcaneCharacter.h"
 
-#include "ArcaneAbilitySystemComponent.h"
+#include "GAS/ArcaneAbilitySystemComponent.h"
 
 
 // Sets default values
