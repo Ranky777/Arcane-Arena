@@ -16,4 +16,6 @@ class ARCANE_ARENA_API AArcaneGameMode : public AGameModeBase
 	
 public:
 	AArcaneGameMode();
+	
+	virtual void PostLogin(APlayerController* NewPlayer) override;
 };

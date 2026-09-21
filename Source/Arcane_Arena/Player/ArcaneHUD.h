@@ -15,5 +15,10 @@ class ARCANE_ARENA_API AArcaneHUD : public AHUD
 	GENERATED_BODY()
 	
 public:
-	AArcaneHUD();
+	// 全局 HUD 控件，BP_ArcaneHUD 里指 WBP_ArcaneHUD
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|UI")
+	TSubclassOf<UUserWidget> GlobalHUDWidgetClass;
+	
+protected:
+	virtual void BeginPlay() override;
 };

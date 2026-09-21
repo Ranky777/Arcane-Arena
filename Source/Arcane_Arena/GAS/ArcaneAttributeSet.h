@@ -42,16 +42,19 @@ public:
 	FGameplayAttributeData MaxEnergy;
 	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, MaxEnergy)
 	
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Vital")
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_EnergyRegen, Category = "Arcane|Vital")
 	FGameplayAttributeData EnergyRegen;
 	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, EnergyRegen)
 	
 	// --- 移动（Buff/减速改写目标）---
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Movement")
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MoveSpeed, Category = "Arcane|Movement")
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, MoveSpeed)
 	
 protected:
+	// GE 执行后钳制：伤害把 Health 打到负值时收敛到 0（死亡判定 <= 0 依赖此语义）
+	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
+
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	UFUNCTION()
@@ -65,4 +68,10 @@ protected:
 	
 	UFUNCTION()
 	void OnRep_MaxEnergy(const FGameplayAttributeData& OldValue);
+	
+	UFUNCTION()
+	void OnRep_EnergyRegen(const FGameplayAttributeData& OldValue);
+
+	UFUNCTION()
+	void OnRep_MoveSpeed(const FGameplayAttributeData& OldValue);
 };
