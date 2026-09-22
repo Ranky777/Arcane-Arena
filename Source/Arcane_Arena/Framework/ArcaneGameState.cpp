@@ -21,5 +21,15 @@ void AArcaneGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 
 void AArcaneGameState::OnRep_Phase()
 {
-	// [PLACEHOLDER] Phase 6：回合阶段切换广播（开场/结束 UI 订阅点）
+	OnPhaseChanged.Broadcast(MatchPhase);
+}
+
+void AArcaneGameState::OnRep_TeamScores()
+{
+	OnScoreChanged.Broadcast();
+}
+
+void AArcaneGameState::OnRep_RoundNumber()
+{
+	OnRoundNumberChanged.Broadcast();
 }

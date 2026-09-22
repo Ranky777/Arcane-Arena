@@ -27,4 +27,7 @@ public:
 	static float ApplyArcaneDamage(AActor* SourceActor, AActor* TargetActor,
 		TSubclassOf<UGameplayEffect> DamageGameplayEffectClass, float Damage,
 		const FHitResult& HitResult);
+	
+	// 取阵营 ID：玩家 Pawn→其 PlayerState 的 TeamID
+	static int32 GetActorTeamID(const AActor* Actor);
 };

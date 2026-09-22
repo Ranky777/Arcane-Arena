@@ -9,11 +9,13 @@ void AArcaneHUD::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	if (GlobalHUDWidgetClass != nullptr)
+	// 只在本地玩家的 HUD 里创建（ListenServer 主机 + 每个客户端各一份）
+	if (GlobalHUDWidgetClass != nullptr && HUDWidget == nullptr)
 	{
-		if (UUserWidget* WB = CreateWidget<UUserWidget>(GetWorld(), GlobalHUDWidgetClass))
+		HUDWidget = CreateWidget<UUserWidget>(GetWorld(), GlobalHUDWidgetClass);
+		if (HUDWidget != nullptr)
 		{
-			WB->AddToViewport();
+			HUDWidget->AddToViewport();
 		}
 	}
 }

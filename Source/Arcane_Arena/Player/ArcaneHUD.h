@@ -19,6 +19,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|UI")
 	TSubclassOf<UUserWidget> GlobalHUDWidgetClass;
 	
+	UPROPERTY()
+	TObjectPtr<UUserWidget> HUDWidget;
+	
 protected:
 	virtual void BeginPlay() override;
 };

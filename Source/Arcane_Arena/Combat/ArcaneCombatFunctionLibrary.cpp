@@ -8,9 +8,10 @@
 #include "GameFramework/Actor.h"
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
+#include "Player/ArcanePlayerState.h"
 
 float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActor* TargetActor,
-	TSubclassOf<UGameplayEffect> DamageGameplayEffectClass, float Damage, const FHitResult& HitResult)
+                                                      TSubclassOf<UGameplayEffect> DamageGameplayEffectClass, float Damage, const FHitResult& HitResult)
 {
 	const IAbilitySystemInterface* TargetASI = Cast<IAbilitySystemInterface>(TargetActor);
 	UAbilitySystemComponent* TargetASC = TargetASI != nullptr ? TargetASI->GetAbilitySystemComponent() : nullptr;
@@ -22,6 +23,14 @@ float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActo
 
 	// 权威门槛：伤害只在服务器结算。客户端预测激活时调这里会直接返回 0。
 	if (TargetActor == nullptr || !TargetActor->HasAuthority())
+	{
+		return 0.0f;
+	}
+	
+	// 友军伤害门禁：同队（且双方都有合法阵营）直接免伤
+	const int32 SourceTeam = GetActorTeamID(SourceActor);
+	const int32 TargetTeam = GetActorTeamID(TargetActor);
+	if (SourceTeam >= 0 && SourceTeam == TargetTeam)
 	{
 		return 0.0f;
 	}
@@ -48,4 +57,27 @@ float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActo
 	SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
 
 	return Damage;
+}
+
+int32 UArcaneCombatFunctionLibrary::GetActorTeamID(const AActor* Actor)
+{
+	if (Actor == nullptr)
+	{
+		return -1;
+	}
+	
+	if (const APawn* Pawn = Cast<APawn>(Actor))
+	{
+		if (const AArcanePlayerState* PS = Pawn->GetPlayerState<AArcanePlayerState>())
+		{
+			return PS->TeamID;
+		}
+	}
+	
+	if (const AArcanePlayerState* PS = Cast<AArcanePlayerState>(Actor))
+	{
+		return PS->TeamID; // 直接传了 PlayerState 的情况
+	}
+	
+	return -1;
 }

@@ -27,9 +27,14 @@ public:
 	
 	UArcaneAttributeSet* GetArcaneAttributeSet() const { return AttributeSet; }
 	
-	// 3v3 队伍 ID（0/1），GameMode PostLogin 交替分配
+	// 3v3 队伍 ID（0/1），GameMode PostLogin 交替分配。
+	// 默认 -1 = "未知/未分配"哨兵：客户端复制到达前、服务器 PostLogin 写入前
+	// 都能被 UI 侧识别为"数据未就绪"，避免把默认 0 误当队 0（头顶血条染色的时序修复）。
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Team, Category = "Arcane|Match")
-	int32 TeamID = 0;
+	int32 TeamID = -1;
+	
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Match")
+	bool bIsDead = false;
 	
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

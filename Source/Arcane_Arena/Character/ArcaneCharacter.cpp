@@ -6,12 +6,14 @@
 #include "AI/ArcaneAIController.h"
 #include "Components/WidgetComponent.h"
 #include "Core/ArcaneAbilityTypes.h"
+#include "Framework/ArcaneGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneGameplayAbility.h"
 #include "GAS/ArcaneAttributeSet.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/ArcanePlayerState.h"
+#include "UI/ArcaneOwnerWidget.h"
 #include "UI/ArcaneUserWidget.h"
 
 
@@ -119,20 +121,13 @@ void AArcaneCharacter::InitHealthBar()
 			WB->BindAttribute(UArcaneAttributeSet::GetMaxHealthAttribute());
 			GetWorld()->GetTimerManager().ClearTimer(HealthBarRetryHandle);
 			
+			if (UArcaneOwnerWidget* OwnerWidget = Cast<UArcaneOwnerWidget>(WB))
+			{
+				OwnerWidget->SetOwnerActor(this);
+			}
+			
 			return;
 		}
-		else
-		{
-			// [DIAG] Widget 存在但 GetArcaneASC() 为空（PlayerState/ASC 未就绪）
-			// UE_LOG(LogTemp, Warning, TEXT("[DIAG-Arcane] InitHealthBar: Widget 存在但 GetArcaneASC()=null（Pawn=%s, 重试 %d/10）"),
-			// 	*GetName(), HealthBarRetries);
-		}
-	}
-	else
-	{
-		// // [DIAG] Widget 还没建好（GetWidget() 返回 null 或类型不对）
-		// UE_LOG(LogTemp, Warning, TEXT("[DIAG-Arcane] InitHealthBar: GetWidget() 为 null 或不是 UArcaneUserWidget（Pawn=%s, 重试 %d/10）"),
-		// 	*GetName(), HealthBarRetries);
 	}
 	
 	// 客户端 PlayerState 可能还没复制到：0.1s 重试，最多 10 次
@@ -175,6 +170,11 @@ void AArcaneCharacter::OnRep_IsDead()
 void AArcaneCharacter::HandleDeath()
 {
 	bIsDead = true;
+	
+	if (AArcanePlayerState* PS = GetPlayerState<AArcanePlayerState>())
+	{
+		PS->bIsDead = true;
+	}
 
 	if (UAbilitySystemComponent* ASC = GetArcaneASC())
 	{
@@ -185,6 +185,11 @@ void AArcaneCharacter::HandleDeath()
 		EventData.EventTag = FGameplayTag::RequestGameplayTag(FName("Event.Character.Death"));
 		EventData.Target = this;
 		ASC->HandleGameplayEvent(EventData.EventTag, &EventData);
+	}
+	
+	if (AArcaneGameMode* GM = GetWorld()->GetAuthGameMode<AArcaneGameMode>())
+	{
+		GM->NotifyCharacterDeath(this);
 	}
 
 	ApplyDeathPresentation();
