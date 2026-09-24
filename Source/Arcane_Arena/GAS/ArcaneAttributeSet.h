@@ -28,10 +28,24 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Arcane|Vital")
 	FGameplayAttributeData Health;
 	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, Health)
-	
+
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxHealth, Category = "Arcane|Vital")
 	FGameplayAttributeData MaxHealth;
 	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, MaxHealth)
+
+	// --- 蓝图属性句柄（供 UI 的 BindAttribute 使用）---
+	// 引擎宏生成的静态 getter 不带 UFUNCTION，蓝图不可见，这里手动补蓝图入口。
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Health Attribute (BP)"))
+	static FGameplayAttribute BPGetHealthAttribute() { return GetHealthAttribute(); }
+
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Max Health Attribute (BP)"))
+	static FGameplayAttribute BPGetMaxHealthAttribute() { return GetMaxHealthAttribute(); }
+
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Energy Attribute (BP)"))
+	static FGameplayAttribute BPGetEnergyAttribute() { return GetEnergyAttribute(); }
+
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Max Energy Attribute (BP)"))
+	static FGameplayAttribute BPGetMaxEnergyAttribute() { return GetMaxEnergyAttribute(); }
 	
 	// --- 能量（技能资源，见玩法文档 §4.2）---
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Energy, Category = "Arcane|Vital")

@@ -51,4 +51,7 @@ private:
 	// 必须是 UFUNCTION：BindAction 带参重载在运行时按 UFunction 名字解析
 	UFUNCTION()
 	void OnAbilityInputPressed(int32 InputID);
+
+	UFUNCTION()
+	void OnAbilityInputReleased(int32 InputID);
 };

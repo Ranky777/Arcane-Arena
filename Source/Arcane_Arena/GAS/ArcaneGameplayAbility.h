@@ -41,6 +41,7 @@ protected:
 
 	//~ UGameplayAbility 覆写 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+public:
 	// 合并"GE 静态标签 + 技能专属标签"，保证 CheckCooldown 检查的标签集与实际授予的一致
 	virtual const FGameplayTagContainer* GetCooldownTags() const override;
 

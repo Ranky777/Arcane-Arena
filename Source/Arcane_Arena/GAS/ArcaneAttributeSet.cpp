@@ -11,7 +11,7 @@ UArcaneAttributeSet::UArcaneAttributeSet()
 	// 默认值全部视为 [PLACEHOLDER]，playtest 后回填
 	InitHealth(100.f);
 	InitMaxHealth(100.f);
-	InitEnergy(50.f);
+	InitEnergy(100.f); // 初始能量=满值（与 MaxEnergy 一致），否则开局只有 50
 	InitMaxEnergy(100.f);
 	InitEnergyRegen(8.f);
 	InitMoveSpeed(600.f);

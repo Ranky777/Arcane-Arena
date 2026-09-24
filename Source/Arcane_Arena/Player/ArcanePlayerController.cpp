@@ -49,8 +49,10 @@ void AArcanePlayerController::BindAbilityInputs()
 		{
 			if (Mapping.InputAction != nullptr && Mapping.AbilityID != EArcaneAbilityInputID::None)
 			{
-				const int32 InputID = static_cast<int32>(Mapping.AbilityID);
-				EIC->BindAction(Mapping.InputAction, ETriggerEvent::Started, this, &AArcanePlayerController::OnAbilityInputPressed, InputID);
+			const int32 InputID = static_cast<int32>(Mapping.AbilityID);
+			EIC->BindAction(Mapping.InputAction, ETriggerEvent::Started, this, &AArcanePlayerController::OnAbilityInputPressed, InputID);
+			// 释放也要通知 GAS，否则 Spec.InputPressed 永久卡 true，能力结束时会误触发"按住重激活"
+			EIC->BindAction(Mapping.InputAction, ETriggerEvent::Completed, this, &AArcanePlayerController::OnAbilityInputReleased, InputID);
 			}
 		}
 	}
@@ -63,6 +65,17 @@ void AArcanePlayerController::OnAbilityInputPressed(int32 InputID)
 		if (UArcaneAbilitySystemComponent* ASC = Avatar->GetArcaneASC())
 		{
 			ASC->AbilityLocalInputPressed(InputID);
+		}
+	}
+}
+
+void AArcanePlayerController::OnAbilityInputReleased(int32 InputID)
+{
+	if (const AArcaneCharacter* Avatar = Cast<AArcaneCharacter>(GetPawn()))
+	{
+		if (UArcaneAbilitySystemComponent* ASC = Avatar->GetArcaneASC())
+		{
+			ASC->AbilityLocalInputReleased(InputID);
 		}
 	}
 }

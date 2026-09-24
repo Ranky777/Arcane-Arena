@@ -321,7 +321,16 @@ void AArcaneGameMode::StartNextRound()
 				const float MaxHealth = ASC->GetNumericAttribute(UArcaneAttributeSet::GetMaxHealthAttribute());
 				ASC->SetNumericAttributeBase(UArcaneAttributeSet::GetHealthAttribute(), MaxHealth);
 				
-				// TODO: 之后的各种需要恢复的属性都在这里
+				const float MaxEnergy = ASC->GetNumericAttribute(UArcaneAttributeSet::GetMaxEnergyAttribute());
+				ASC->SetNumericAttributeBase(UArcaneAttributeSet::GetEnergyAttribute(), MaxEnergy);
+				
+				// 清除全部冷却
+				FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(FGameplayTagContainer(FGameplayTag::RequestGameplayTag(FName("Ability.Cooldown"))));
+				
+				for (const FActiveGameplayEffectHandle& Handle : ASC->GetActiveEffects(Query))
+				{
+					ASC->RemoveActiveGameplayEffect(Handle);
+				}
 			}
 		}
 	}
