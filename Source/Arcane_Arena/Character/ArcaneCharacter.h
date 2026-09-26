@@ -7,6 +7,7 @@
 #include "GameFramework/Character.h"
 #include "ArcaneCharacter.generated.h"
 
+struct FGameplayTag;
 class UArcaneUserWidget;
 class UWidgetComponent;
 class UArcaneAbilitySystemComponent;
@@ -31,6 +32,10 @@ public:
 
 	// 绑定头顶血条到本角色 ASC（客户端 PlayerState 到位前自动重试）
 	void InitHealthBar();
+	
+	// 受击反应蒙太奇入口，BP 子类实现（BP_CombatCharacter / BP_CombatEnemy）
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arcane|Combat")
+	void PlayHitReaction(FGameplayTag ReactionTag);
 	
 protected:
 	// Called when the game starts or when spawned
@@ -68,7 +73,13 @@ protected:
 	void ApplyDeathPresentation();
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
+	
+	// ASC 初始化后调用（Bot 在 PostInitializeComponents 拿到 Character ASC 处；
+	// 玩家在 PlayerState 的 ASC 可用之后，两处都要绑）
+	void BindStatusGates(UAbilitySystemComponent* ASC);
+	
+	UFUNCTION()
+	void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 	
 public:
 	// Called every frame

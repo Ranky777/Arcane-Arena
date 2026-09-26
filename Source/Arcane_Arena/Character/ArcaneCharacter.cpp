@@ -146,6 +146,33 @@ void AArcaneCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(AArcaneCharacter, bIsDead);
 }
 
+void AArcaneCharacter::BindStatusGates(UAbilitySystemComponent* ASC)
+{
+	if (ASC != nullptr)
+	{
+		ASC->RegisterGameplayTagEvent(
+			FGameplayTag::RequestGameplayTag(FName("Status.Stun")),
+			EGameplayTagEventType::NewOrRemoved
+			).AddUObject(this, &AArcaneCharacter::OnStunTagChanged);
+	}
+}
+
+void AArcaneCharacter::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		if (NewCount > 0)
+		{
+			Move->StopMovementImmediately();
+			Move->DisableMovement();
+		}
+		else
+		{
+			Move->SetMovementMode(MOVE_Walking);
+		}
+	}
+}
+
 void AArcaneCharacter::OnHealthChanged(const FOnAttributeChangeData& Data)
 {
 	// // [DIAG] 服务端 Health 变化委托触发
