@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "ArcaneOwnerWidget.h"
 
 #include "GameFramework/Pawn.h"
@@ -22,6 +20,8 @@ void UArcaneOwnerWidget::SetOwnerActor(AActor* InOwnerActor)
 		World->GetTimerManager().ClearTimer(RelationRetryHandle);
 	}
 	RelationRetries = 0;
+	ResolvedRelation = EArcaneOwnerRelation::Enemy;
+	NativeOnOwnerReassigned();
 	TryResolveRelation();
 }
 
@@ -56,7 +56,13 @@ void UArcaneOwnerWidget::TryResolveRelation()
 		Relation = EArcaneOwnerRelation::Ally;
 	}
 
+	ResolvedRelation = Relation;
 	OnOwnerRelationSet(Relation);
+}
+
+void UArcaneOwnerWidget::OnOwnerRelationSet_Implementation(EArcaneOwnerRelation Relation)
+{
+	NativeOnOwnerRelationSet(Relation);
 }
 
 void UArcaneOwnerWidget::ScheduleResolveRetry()

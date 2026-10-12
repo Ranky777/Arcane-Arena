@@ -30,12 +30,15 @@
 			"Enabled": true
 		},
 		{
-			"Name": "ModelContextProtocol",
+			"Name": "AllToolsets",
 			"Enabled": true
 		},
 		{
-			"Name": "AllToolsets",
+			"Name": "ModelContextProtocol",
 			"Enabled": true
 		}
+	],
+	"TargetPlatforms": [
+		"Windows"
 	]
 }

@@ -24,7 +24,7 @@ void UArcaneUserWidget::BindAttribute(const FGameplayAttribute& Attribute)
 			
 			// 立即广播一次当前值（初值填充）
 			const float Current = BoundASC->GetNumericAttribute(Attribute);
-			OnAttributeChanged.Broadcast(Attribute, Current, Current);
+			BroadcastAttribute(Attribute, Current, Current);
 		}
 	}
 	else
@@ -36,7 +36,13 @@ void UArcaneUserWidget::BindAttribute(const FGameplayAttribute& Attribute)
 
 void UArcaneUserWidget::HandleAttributeChanged(const FOnAttributeChangeData& Data)
 {
-	OnAttributeChanged.Broadcast(Data.Attribute, Data.NewValue, Data.OldValue);
+	BroadcastAttribute(Data.Attribute, Data.NewValue, Data.OldValue);
+}
+
+void UArcaneUserWidget::BroadcastAttribute(const FGameplayAttribute& Attribute, float NewValue, float OldValue)
+{
+	NativeOnAttributeChanged(Attribute, NewValue, OldValue);
+	OnAttributeChanged.Broadcast(Attribute, NewValue, OldValue);
 }
 
 void UArcaneUserWidget::UnbindAll()
@@ -70,6 +76,15 @@ void UArcaneUserWidget::InitFromASC(UAbilitySystemComponent* ASC)
 		BindAttribute(Attr);
 	}
 	PendingAttributes.Empty();
+}
+
+void UArcaneUserWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	// 在蓝图 EventConstruct（绑定各 GameState 委托）之后，用当前阶段强制刷新一次面板。
+	OnUserWidgetConstructed();
+	NativeOnConstructed();
 }
 
 void UArcaneUserWidget::NativeDestruct()

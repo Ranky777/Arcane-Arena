@@ -3,6 +3,7 @@
 
 #include "ArcanePlayerState.h"
 
+#include "Framework/ArcaneGameState.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneAttributeSet.h"
 #include "Net/UnrealNetwork.h"
@@ -31,9 +32,16 @@ void AArcanePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	
 	DOREPLIFETIME(AArcanePlayerState, TeamID);
 	DOREPLIFETIME(AArcanePlayerState, bIsDead);
+	DOREPLIFETIME(AArcanePlayerState, bIsRoomOwner);
 }
 
 void AArcanePlayerState::OnRep_Team()
 {
-	// [PLACEHOLDER] Phase 6：队伍染色 / 比分 UI 订阅点
+	// 客户端：队伍变化要驱动大厅面板重新统计人数。
+	// OnRosterChanged 是服务器侧 Broadcast 的动态委托，不会自己过网，
+	// 这里在 OnRep 落地后本地补广播一次。
+	if (AArcaneGameState* GS = GetWorld() ? GetWorld()->GetGameState<AArcaneGameState>() : nullptr)
+	{
+		GS->OnRosterChanged.Broadcast();
+	}
 }

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Framework/ArcaneGameState.h"
 #include "GameFramework/GameMode.h"
 #include "ArcaneGameMode.generated.h"
 
@@ -26,6 +27,19 @@ public:
 	
 	// 角色（服务端）死亡时上报，回合系统唯一入口
 	void NotifyCharacterDeath(AArcaneCharacter* DeadCharacter);
+	
+	// —— 房间/阵营阶段（客户端通过 Server RPC 调用，服务端在此校验）——
+	void HandleTeamRequest(AArcanePlayerState* PS, int32 NewTeamID);
+	
+	bool HandleStartMatchRequest(AController* Requester);
+	
+	bool HandleRematchRequest(AController* Requester);
+	
+	bool HandleBackToLobbyRequest(AController* Requester);
+	
+	// 每队人数上限 [PLACEHOLDER] 3v3
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Match", meta = (ClampMin = "1"))
+	int32 MaxPlayersPerTeam = 3;
 	
 protected:
 	/**
@@ -68,4 +82,35 @@ protected:
 	float RoundEndDuration = 5.0f;
 	
 	FTimerHandle RoundEndTimerHandle;
+	
+	// 服务端：把角色锁住（不能移动/放技能）或解锁
+	void LockAllCharacters(bool bLock);
+	
+	// 服务端：把角色送到本队（TeamID）的空出生点，复用 ChoosePlayerStart 的占用判定
+	// 注意：不能带 const —— ChoosePlayerStart 是 AGameModeBase 的非 const 成员
+	void TeleportCharacterToTeamStart(AArcaneCharacter* Character);
+	
+	// 服务端：清空所有玩家状态并重生（回合重置的唯一实现）
+	void RespawnAllPlayers();
+	
+	// 服务端：进入「PLAYING」状态的统一入口（清比分 + 重生 + 解锁 + 广播）
+	void EnterPlayingPhase();
+	
+	/**
+	 * 服务端：阶段变化 → 全场锁定状态的唯一入口（AddDynamic 绑到 GameState.OnPhaseChanged）。
+	 * 只有 Playing 放开移动，Warmup / RoundEnd / MatchEnd 一律锁死。
+	 * 以前是各流程手写 LockAllCharacters，结果 HandleMatchHasStarted、EndRound、
+	 * StartNextRound 三处都漏了 —— 开局选阵营阶段能随意走动就是这里来的。
+	 */
+	UFUNCTION()
+	void HandleMatchPhaseChanged(EArcaneMatchPhase NewPhase);
+	
+	// OnPhaseChanged 只绑一次（GameMode 与 GameState 同生命周期，无需解绑）
+	bool bPhaseChangedDelegateBound = false;
+	
+	// 服务端：队伍人数统计
+	int32 CountTeamMembers(int32 InTeamID) const;
+	
+	// 服务端：把阶段设为 Warmup 并重新上锁 + 清比分
+	void EnterWarmupPhase();
 };

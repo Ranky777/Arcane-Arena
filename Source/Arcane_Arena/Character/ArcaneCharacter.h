@@ -37,13 +37,39 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arcane|Combat")
 	void PlayHitReaction(FGameplayTag ReactionTag);
 	
+	// 回合/房间阶段锁定：为 true 时不能移动、不能放技能（选阵营与结算期间）。
+	// Replicated：服务端加锁后，客户端各自禁掉自己的输入（InputComponent 只在客户端有意义）。
+	UPROPERTY(ReplicatedUsing = OnRep_MatchLocked, BlueprintReadOnly, Category = "Arcane|Match")
+	bool bMatchLocked = false;
+	
+	UFUNCTION(BlueprintPure, Category = "Arcane|Match")
+	bool IsMatchLocked() const { return bMatchLocked; }
+	
+	UFUNCTION(BlueprintCallable, Category = "Arcane|Match")
+	void SetMatchLocked(bool bLocked);
+	
+	// 依据 GameState 当前阶段自动上锁。Pawn 生成时自愈，
+	// 这样任何生成路径（首次出生 / 回合重生 / 客户端补生成）都覆盖到。
+	void ApplyMatchLockFromGameState();
+	
+	// 锁定/死亡期间不响应任何自由移动输入。
+	// Enhanced Input 的 IA_Move 直接调 AddMovementInput，不经过 AController::IgnoreMoveInput，
+	// 所以只 SetIgnoreMoveInput(true) 是锁不住的，必须在输入入口拦。
+	virtual void AddMovementInput(FVector WorldDirection, float ScaleValue = 1.0f, bool bForce = false) override;
+	
 protected:
+	// IA_Jump 同理：锁定时不吃跳跃输入，避免起跳把 MovementMode 顶成 Falling。
+	virtual void CheckJumpInput(float DeltaTime) override;
+	
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 	
 	virtual void PossessedBy(AController* NewController) override;
 	
 	virtual void OnRep_PlayerState() override;
+	
+	UFUNCTION()
+	void OnRep_MatchLocked();
 	
 	// 默认授予的能力（在 BP_CombatCharacter / BP_CombatEnemy 的 Class Defaults 里配）
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|GAS")
@@ -90,6 +116,15 @@ public:
 
 private:
 	void GrantDefaultAbilities();
+	
+	void ApplyMatchLock();
+	
+	// 锁定期间每帧压制移动模式。Possess / 代理转自主 / 击退等引擎路径都会把
+	// MovementMode 改回 Walking，一次性 DisableMovement 锁不住，必须持续补。
+	void EnforceMatchLock();
+	
+	// 锁定或已死亡：不该自由移动/跳跃
+	bool ShouldFreezeForMatch() const { return bMatchLocked || bIsDead; }
 	
 	// 当前绑定了 Health 委托的 ASC（防重生重复绑定）
 	TObjectPtr<UArcaneAbilitySystemComponent> BoundHealthASC;

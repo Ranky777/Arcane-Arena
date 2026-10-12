@@ -36,6 +36,16 @@ public:
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Match")
 	bool bIsDead = false;
 	
+	// 是否是房主（Listen Server 的本地玩家）。只有房主能开始比赛 / 再来一局 / 返回房间。
+	// 客户端要读它来决定「开始游戏」按钮是否显示，所以必须复制。
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Match")
+	bool bIsRoomOwner = false;
+
+	// 蓝图侧统一从这里读房主标记：Widget 拿到的是 Cast 后的 PlayerState，
+	// 直接访问成员变量在蓝图里不好连线，包一层 Pure 更顺手。
+	UFUNCTION(BlueprintPure, Category = "Arcane|Match")
+	bool IsRoomOwner() const { return bIsRoomOwner; }
+
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	

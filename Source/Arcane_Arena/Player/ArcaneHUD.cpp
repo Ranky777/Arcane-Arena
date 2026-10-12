@@ -5,6 +5,10 @@
 
 #include "Blueprint/UserWidget.h"
 
+AArcaneHUD::AArcaneHUD()
+{
+}
+
 void AArcaneHUD::BeginPlay()
 {
 	Super::BeginPlay();
