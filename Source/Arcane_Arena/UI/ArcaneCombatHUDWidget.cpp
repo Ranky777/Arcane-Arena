@@ -35,27 +35,15 @@ void UArcaneCombatHUDWidget::NativeOnConstructed()
 	AddSlot(EArcaneAbilityInputID::SecondaryAbility, Border_Secondary, Icon_Secondary, Text_CD_Secondary);
 	AddSlot(EArcaneAbilityInputID::Ultimate, Border_Ultimate, Icon_Ultimate, Text_CD_Ultimate);
 
-	// 能量：直接从本机 PlayerState 的 ASC 绑定，不再依赖蓝图 Construct 连线
-	if (AArcanePlayerState* PS = GetOwningPlayer() ? GetOwningPlayer()->GetPlayerState<AArcanePlayerState>() : nullptr)
-	{
-		if (PS->GetArcaneASC())
-		{
-			InitFromASC(PS->GetArcaneASC());
-			BindAttribute(UArcaneAttributeSet::GetEnergyAttribute());
-			BindAttribute(UArcaneAttributeSet::GetMaxEnergyAttribute());
-		}
-	}
+	// 能量：绑定本机 PlayerState 的 ASC。加入客户端 HUD 构造时 PlayerState 往往
+	// 还没复制到 —— 这里失败不致命，NativeTick 里 TryBindLocalASC 会补绑。
+	TryBindLocalASC();
 
 	if (AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>())
 	{
 		GS->OnScoreChanged.AddDynamic(this, &UArcaneCombatHUDWidget::HandleScoreChanged);
 		GS->OnRoundNumberChanged.AddDynamic(this, &UArcaneCombatHUDWidget::HandleRoundChanged);
 		GS->OnPhaseChanged.AddDynamic(this, &UArcaneCombatHUDWidget::HandlePhaseChanged);
-	}
-
-	if (UArcaneAbilitySystemComponent* ArcaneASC = GetArcaneASC())
-	{
-		ArcaneASC->OnAbilityCommitted.AddDynamic(this, &UArcaneCombatHUDWidget::HandleAbilityCommitted);
 	}
 
 	RefreshScores();
@@ -84,9 +72,40 @@ void UArcaneCombatHUDWidget::NativeOnConstructed()
 	{
 		if (Dim)
 		{
+			// 画刷 Tint=白做乘法基底，颜色/透明度完全交给 BrushColor。
+			// 初始必须置全透明：加入客户端 ASC 复制晚，若遮罩带着不透明白等
+			// 首个 tick，技能槽会整排显示成白方块（且 ASC 迟迟不到就永不恢复）。
 			ArcaneUIStyle::ApplyPanel(Dim, FLinearColor::White, ArcaneUITheme::RadiusChip, 0.f, FLinearColor::Transparent);
+			Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.f));
 		}
 	}
+}
+
+bool UArcaneCombatHUDWidget::TryBindLocalASC()
+{
+	if (BoundASC != nullptr)
+	{
+		return true;
+	}
+	AArcanePlayerState* PS = GetOwningPlayer() ? GetOwningPlayer()->GetPlayerState<AArcanePlayerState>() : nullptr;
+	UArcaneAbilitySystemComponent* ArcaneASC = PS ? PS->GetArcaneASC() : nullptr;
+	if (ArcaneASC == nullptr)
+	{
+		return false;
+	}
+
+	InitFromASC(ArcaneASC);
+	BindAttribute(UArcaneAttributeSet::GetEnergyAttribute());
+	BindAttribute(UArcaneAttributeSet::GetMaxEnergyAttribute());
+	ArcaneASC->OnAbilityCommitted.AddDynamic(this, &UArcaneCombatHUDWidget::HandleAbilityCommitted);
+
+	// 属性变化只在增量时广播，绑定瞬间要主动同步一次现值
+	const float Cur = ArcaneASC->GetNumericAttribute(UArcaneAttributeSet::GetEnergyAttribute());
+	const float Max = FMath::Max(1.0f, ArcaneASC->GetNumericAttribute(UArcaneAttributeSet::GetMaxEnergyAttribute()));
+	MaxEnergySeen = Max;
+	TargetEnergy = FMath::Clamp(Cur / Max, 0.0f, 1.0f);
+	CurrentEnergy = TargetEnergy;
+	return true;
 }
 
 void UArcaneCombatHUDWidget::NativeDestruct()
@@ -175,11 +194,16 @@ void UArcaneCombatHUDWidget::RefreshPhaseDisplay()
 
 	if (Group_ScoreBar)
 	{
-		Group_ScoreBar->SetVisibility(bWarmup ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		const ESlateVisibility BarVis = bWarmup ? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
+		Group_ScoreBar->SetVisibility(BarVis);
+		// 美化包裹层：卡片在 Group 外层，只收内层会留一张空卡片，需同步显隐
+		if (Border_ScoreBar) { Border_ScoreBar->SetVisibility(BarVis); }
 	}
 	if (Group_AbilityBar)
 	{
-		Group_AbilityBar->SetVisibility(bWarmup ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		const ESlateVisibility BarVis = bWarmup ? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
+		Group_AbilityBar->SetVisibility(BarVis);
+		if (Border_AbilityBar) { Border_AbilityBar->SetVisibility(BarVis); }
 	}
 	if (Panel_Lobby)
 	{
@@ -224,14 +248,12 @@ void UArcaneCombatHUDWidget::NativeOnAttributeChanged(const FGameplayAttribute& 
 void UArcaneCombatHUDWidget::UpdateAbilitySlot(FAbilitySlot& Entry, float DeltaTime)
 {
 	const UArcaneAbilitySystemComponent* ArcaneASC = GetArcaneASC();
-	if (ArcaneASC == nullptr)
-	{
-		return;
-	}
-
 	float Remaining = 0.0f;
 	float Duration = 0.0f;
-	const bool bOnCooldown = ArcaneASC->GetCooldownTimes(Entry.InputID, Remaining, Duration);
+	// ASC 未绑定（加入客户端 PlayerState 复制晚）按"就绪"渲染：
+	// 遮罩透明、CD 隐藏。绝不能提前 return —— 那会把构造期的遮罩状态永久冻在槽上
+	const bool bOnCooldown = ArcaneASC != nullptr
+		&& ArcaneASC->GetCooldownTimes(Entry.InputID, Remaining, Duration);
 
 	float DimAlpha = 0.0f;
 	if (bOnCooldown)
@@ -266,6 +288,12 @@ void UArcaneCombatHUDWidget::UpdateAbilitySlot(FAbilitySlot& Entry, float DeltaT
 void UArcaneCombatHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// 加入客户端：PlayerState/ASC 复制晚于 HUD 构造，惰性补绑一次即止
+	if (BoundASC == nullptr)
+	{
+		TryBindLocalASC();
+	}
 
 	if (EnergyBar)
 	{

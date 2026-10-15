@@ -40,6 +40,14 @@ public:
 	// 客户端要读它来决定「开始游戏」按钮是否显示，所以必须复制。
 	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Match")
 	bool bIsRoomOwner = false;
+	
+	// AI 玩家标记。回合系统把 Bot 当一等公民（TeamID/bIsDead 同路径），
+	// UI 层用它显示「AI」标识并隐藏针对真玩家的操作入口。
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Match")
+	bool bIsBot = false;
+	
+	UFUNCTION(BlueprintPure, Category = "Arcane|Match")
+	bool IsBot() const { return bIsBot; } 
 
 	// 蓝图侧统一从这里读房主标记：Widget 拿到的是 Cast 后的 PlayerState，
 	// 直接访问成员变量在蓝图里不好连线，包一层 Pure 更顺手。

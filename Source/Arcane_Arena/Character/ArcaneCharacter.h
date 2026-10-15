@@ -37,6 +37,18 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arcane|Combat")
 	void PlayHitReaction(FGameplayTag ReactionTag);
 	
+	// —— 技能与角色之间的攻击契约：GA 只认这个，不认任何具体 BP 类。
+	// 玩家（BP_CombatCharacter）与 Bot（BP_CombatEnemy）各实现一次，人机同规则。
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Arcane|Combat")
+	void BeginPrimaryAttack(FName AbilityID);
+	
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Arcane|Combat")
+	void BeginSecondaryAttack(FName AbilityID);
+	
+	// 蓄力型技能的"松手"信号；不需要它的子类留空实现即可
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Arcane|Combat")
+	void FinishSecondaryAttack();
+	
 	// 回合/房间阶段锁定：为 true 时不能移动、不能放技能（选阵营与结算期间）。
 	// Replicated：服务端加锁后，客户端各自禁掉自己的输入（InputComponent 只在客户端有意义）。
 	UPROPERTY(ReplicatedUsing = OnRep_MatchLocked, BlueprintReadOnly, Category = "Arcane|Match")

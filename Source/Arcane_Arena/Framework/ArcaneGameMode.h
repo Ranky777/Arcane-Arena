@@ -7,6 +7,8 @@
 #include "GameFramework/GameMode.h"
 #include "ArcaneGameMode.generated.h"
 
+class AArcaneBotCharacter;
+class AArcaneAIController;
 class AArcaneCharacter;
 class AArcanePlayerState;
 class APawn;
@@ -40,6 +42,26 @@ public:
 	// 每队人数上限 [PLACEHOLDER] 3v3
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Match", meta = (ClampMin = "1"))
 	int32 MaxPlayersPerTeam = 3;
+	
+	// —— Bot：服务端权威。客户端唯一入口是 PlayerController 上的 Server RPC ——
+	// 成功条件：Warmup 阶段 + 请求者是房主 + 目标队未满（Bot 计入满员数）
+	bool RequestAddBot(AArcanePlayerState* Requester, int32 TeamID);
+	
+	bool RequestRemoveLastBot(AArcanePlayerState* Requester, int32 TeamID);
+	
+	// AI 快速配平：把落后的队补到与人数最多的队持平（钳制在 MaxPlayersPerTeam；不是补满）
+	bool RequestBalanceBots(AArcanePlayerState* Requester);
+	
+	// Bot 类配置
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Bot")
+	TSubclassOf<AArcaneAIController> BotControllerClass;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Bot")
+	TSubclassOf<AArcaneBotCharacter> BotCharacterClass;
+	
+	// // 进入 Warmup 时每队自动补的 Bot 数；0 = 关。单人离线验证 / 自动补位展示用 [PLACEHOLDER]
+	// UPROPERTY(EditDefaultsOnly, Category = "Arcane|Bot", meta = (ClampMin = "0"))
+	// int32 AutoFillBotsPerTeam = 0;
 	
 protected:
 	/**
@@ -113,4 +135,20 @@ protected:
 	
 	// 服务端：把阶段设为 Warmup 并重新上锁 + 清比分
 	void EnterWarmupPhase();
+	
+	// AI Controller 取 BotCharacterClass，其余走引擎默认（玩家 DefaultPawnClass）
+	virtual UClass* GetDefaultPawnClassForController_Implementation(AController* InController) override;
+	
+private:
+	bool SpawnBot(int32 TeamID);
+	
+	int32 CountTeamBots(int32 TeamID) const;
+	
+	void DestroyAllBots();
+	
+	// void AutoFillBots();
+	
+	FString MakeBotName();
+	
+	int32 BotNameCounter = 0;
 };

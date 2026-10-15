@@ -6,6 +6,8 @@
 #include "Arcane_Arena.h"   // LogArcane（必须排在本文件头之后，满足 IWYU 头顺序规则）
 #include "ArcaneGameState.h"
 #include "EngineUtils.h"
+#include "AI/ArcaneAIController.h"
+#include "Character/ArcaneBotCharacter.h"
 #include "Character/ArcaneCharacter.h"
 #include "Engine/PlayerStartPIE.h"
 #include "GameFramework/GameMode.h"
@@ -61,7 +63,7 @@ void AArcaneGameMode::PostLogin(APlayerController* NewPlayer)
 	
 	if (AArcaneGameState* GS = GetGameState<AArcaneGameState>())
 	{
-		GS->OnRosterChanged.Broadcast();
+		GS->NotifyRosterChanged();
 	}
 }
 
@@ -233,8 +235,6 @@ void AArcaneGameMode::NotifyCharacterDeath(AArcaneCharacter* DeadCharacter)
 		{
 			EndRound(DeadTeam == 0 ? 1 : 0);
 		}
-		
-		// Bot 死亡（Character 端 ASC）走另一条路，Phase 6 后半段补
 	}
 }
 
@@ -273,7 +273,7 @@ void AArcaneGameMode::HandleTeamRequest(AArcanePlayerState* PS, int32 NewTeamID)
 	}
 	
 	// 让两端客户端的阵营面板刷新人数
-	GS->OnRosterChanged.Broadcast();
+	GS->NotifyRosterChanged();
 }
 
 bool AArcaneGameMode::HandleStartMatchRequest(AController* Requester)
@@ -344,6 +344,248 @@ bool AArcaneGameMode::HandleBackToLobbyRequest(AController* Requester)
 	return true;
 }
 
+bool AArcaneGameMode::RequestAddBot(AArcanePlayerState* Requester, int32 TeamID)
+{
+	AArcaneGameState* GS = GetGameState<AArcaneGameState>();
+	if (GS == nullptr || GS->MatchPhase != EArcaneMatchPhase::Warmup)
+	{
+		return false; // 只有选阵营阶段能够加入 AI
+	}
+	if (Requester == nullptr || Requester->bIsRoomOwner == false)
+	{
+		return false; // 只有房主能够加入 AI
+	}
+	
+	if (TeamID < 0 || TeamID >= FMath::Max(1, NumTeams))
+	{
+		return false;
+	}
+	
+	if (CountTeamMembers(TeamID) >= MaxPlayersPerTeam)
+	{
+		UE_LOG(LogArcane, Log, TEXT("RequestAddBot: Team%d 已满（%d/%d，含 Bot）"), TeamID, CountTeamMembers(TeamID), MaxPlayersPerTeam);
+		return false;
+	}
+	
+	return SpawnBot(TeamID);
+}
+
+bool AArcaneGameMode::RequestRemoveLastBot(AArcanePlayerState* Requester, int32 TeamID)
+{
+	AArcaneGameState* GS = GetGameState<AArcaneGameState>();
+	if (GS == nullptr || GS->MatchPhase != EArcaneMatchPhase::Warmup)
+	{
+		return false;
+	}
+	if (Requester == nullptr || Requester->bIsRoomOwner == false)
+	{
+		return false;
+	}
+	
+	for (int32 i = GameState->PlayerArray.Num() - 1; i >= 0; i--)
+	{
+		const AArcanePlayerState* ArcPS = Cast<AArcanePlayerState>(GameState->PlayerArray[i]);
+		if (ArcPS != nullptr && ArcPS->bIsBot && ArcPS->TeamID == TeamID)
+		{
+			if (AArcaneAIController* Bot = Cast<AArcaneAIController>(ArcPS->GetOwner()))
+			{
+				Bot->DestroyBotCompletely();
+				GS->NotifyRosterChanged();
+				
+				return true;
+			}
+		}
+	}
+	
+	return false;
+}
+
+bool AArcaneGameMode::RequestBalanceBots(AArcanePlayerState* Requester)
+{
+	AArcaneGameState* GS = GetGameState<AArcaneGameState>();
+	if (GS == nullptr || GS->MatchPhase != EArcaneMatchPhase::Warmup)
+	{
+		return false;
+	}
+	
+	if (Requester == nullptr || Requester->bIsRoomOwner == false)
+	{
+		return false;
+	}
+	
+	const int32 TeamCount = FMath::Max(1, NumTeams);
+	
+	// 目标 = 当前人数最多队的成员数（包含AI）
+	int32 Target = 0;
+	for (int32 Team = 0; Team < TeamCount; Team++)
+	{
+		Target = FMath::Max(Target, CountTeamMembers(Team));
+	}
+	Target = FMath::Min(Target, MaxPlayersPerTeam);
+	
+	if (Target <= 0)
+	{
+		return false; // 两队全空不配平
+	}
+	
+	bool bSpawnedAny = false;
+	for (int32 Team = 0; Team < TeamCount; Team++)
+	{
+		while (CountTeamMembers(Team) < Target)
+		{
+			if (SpawnBot(Team) == false)
+			{
+				break; // 生成失败即终止，不空转
+			}
+			
+			bSpawnedAny = true;
+		}
+	}
+	
+	// UE_LOG(LogArcane, Warning, TEXT("RequestBalanceBots: 房主 %s 配平至每队 %d 人（本次%s）"),
+	// 	*Requester->GetPlayerName(), Target, bSpawnedAny ? TEXT("有新增") : TEXT("无新增"));
+	return bSpawnedAny;
+}
+
+UClass* AArcaneGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
+{
+	if (InController && InController->IsA<AArcaneAIController>() && BotCharacterClass != nullptr)
+	{
+		return BotCharacterClass;
+	}
+	
+	return Super::GetDefaultPawnClassForController_Implementation(InController);
+}
+
+bool AArcaneGameMode::SpawnBot(int32 TeamID)
+{
+	if (BotControllerClass == nullptr || BotCharacterClass == nullptr)
+	{
+		UE_LOG(LogArcane, Warning, TEXT("SpawnBot: BotControllerClass/BotCharacterClass 未在 GameMode 上配置"));
+		return false;
+	}
+	
+	FActorSpawnParameters Params;
+	Params.ObjectFlags |= RF_Transient;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	
+	// SpawnActor 返回时 PostInitializeComponents 已跑完 → PlayerState 已创建并进入 PlayerArray
+	AArcaneAIController* Bot = GetWorld()->SpawnActor<AArcaneAIController>(BotControllerClass, FTransform::Identity, Params);
+	
+	if (Bot == nullptr)
+	{
+		return false;
+	}
+	
+	AArcanePlayerState* PS = Bot->GetPlayerState<AArcanePlayerState>();
+	if (PS == nullptr)
+	{
+		UE_LOG(LogArcane, Warning, TEXT("SpawnBot: PlayerStateClass 不是 AArcanePlayerState？"));
+		Bot->Destroy();
+		return false;
+	}
+	
+	// 必须在 RestartPlayer 之前写：ChoosePlayerStart 按 PS->TeamID 选 TeamN 出生点
+	PS->bIsBot = true;
+	PS->TeamID = TeamID;
+	PS->SetPlayerName(MakeBotName());
+	
+	Bot->SetGenericTeamId(FGenericTeamId(TeamID));
+	
+	RestartPlayer(Bot);
+	
+	if (Bot->GetPawn() == nullptr)
+	{
+		UE_LOG(LogArcane, Warning, TEXT("SpawnBot: RestartPlayer 未能生成 Pawn（Team%d）"), TeamID);
+		Bot->DestroyBotCompletely();
+		return false;
+	}
+	
+	if (AArcaneGameState* GS = GetGameState<AArcaneGameState>())
+	{
+		GS->NotifyRosterChanged();
+	}
+	
+	return true;
+}
+
+int32 AArcaneGameMode::CountTeamBots(int32 TeamID) const
+{
+	int32 Count = 0;
+	
+	for (APlayerState* PS : GameState->PlayerArray)
+	{
+		if (const AArcanePlayerState* ArcPS = Cast<AArcanePlayerState>(PS))
+		{
+			if (ArcPS->bIsBot && ArcPS->TeamID == TeamID)
+			{
+				Count++;
+			}
+		}
+	}
+	
+	return Count;
+}
+
+void AArcaneGameMode::DestroyAllBots()
+{
+	TArray<AArcaneAIController*> Bots;
+	
+	for (FConstControllerIterator It = GetWorld()->GetControllerIterator(); It; ++It)
+	{
+		if (AArcaneAIController* Bot = Cast<AArcaneAIController>(It->Get()))
+		{
+			Bots.Add(Bot);
+		}
+	}
+	
+	for (AArcaneAIController* Bot : Bots)
+	{
+		Bot->DestroyBotCompletely();
+	}
+	
+	if (Bots.Num() > 0)
+	{
+		if (AArcaneGameState* GS = GetGameState<AArcaneGameState>())
+		{
+			GS->NotifyRosterChanged();
+		}
+	}
+}
+
+//
+// void AArcaneGameMode::AutoFillBots()
+// {
+// 	if (AutoFillBotsPerTeam <= 0 || BotControllerClass == nullptr || BotCharacterClass == nullptr)
+// 	{
+// 		return;
+// 	}
+// 	
+// 	const int32 TeamCount = FMath::Max(1, NumTeams);
+// 	
+// 	for (int32 Team = 0; Team < TeamCount; ++Team)
+// 	{
+// 		// 每队最多补 AutoFillBotsPerTeam 个 Bot；真人占的坑不挤（CountTeamMembers 含真人与 Bot）
+// 		int32 Guard = AutoFillBotsPerTeam;
+// 		
+// 		while (Guard > 0 && CountTeamMembers(Team) < AutoFillBotsPerTeam)
+// 		{
+// 			if (SpawnBot(Team) == false)
+// 			{
+// 				break; // 生成失败绝不空转
+// 			}
+// 			
+// 			Guard--;
+// 		}
+// 	}
+// }
+
+FString AArcaneGameMode::MakeBotName()
+{
+	BotNameCounter++;
+	return FString::Printf(TEXT("Arcane Bot %d"), BotNameCounter);
+}
+
 void AArcaneGameMode::LockAllCharacters(bool bLock)
 {
 	for (FConstControllerIterator It = GetWorld()->GetControllerIterator(); It; ++It)
@@ -377,27 +619,39 @@ void AArcaneGameMode::TeleportCharacterToTeamStart(AArcaneCharacter* Character)
 
 void AArcaneGameMode::RespawnAllPlayers()
 {
-	// 重生所有玩家
+	// 玩家与 Bot 共用一条重生通路：销毁旧 Pawn → RestartPlayer。
+	// Pawn 类由 GetDefaultPawnClassForController 按 Controller 类型分流。
+	// ASC 归 PlayerState：Bot 与玩家逐字相同地走下面的重置循环（回血/回能量/清冷却）。
+	// Bot 的新 Pawn 携带全新 ASC（构造默认满血、无冷却），无需属性重置代码。
 	for (FConstControllerIterator It = GetWorld()->GetControllerIterator(); It; ++It)
 	{
-		APlayerController* PC = Cast<APlayerController>(It->Get());
-		if (PC == nullptr)
+		AController* Controller = It->Get();
+		if (Controller == nullptr)
+		{
+			continue;
+		}
+		
+		if (Cast<APlayerController>(Controller) == nullptr && Cast<AArcaneAIController>(Controller) == nullptr)
 		{
 			continue;
 		}
 		
 		// 先销毁旧 Pawn（含尸体），否则 RestartPlayer 会因 PC 已持有 Pawn 而空跑
-		if (APawn* OldPawn = PC->GetPawn())
+		if (APawn* OldPawn = Controller->GetPawn())
 		{
-			PC->UnPossess();
+			Controller->UnPossess();
 			OldPawn->Destroy();
 		}
 		
 		// 清掉 Login/上次出生缓存的 StartSpot，否则引擎 ShouldSpawnAtStartSpot()
 		// 会永远复用同一个点，回合重生不会按占用情况重新分配
-		PC->StartSpot = nullptr;
+		// StartSpot 只在 PlayerController 上有登录期缓存问题；AI 每次都会走 ChoosePlayerStart
+		if (APlayerController* PC = Cast<APlayerController>(Controller))
+		{
+			PC->StartSpot = nullptr;
+		}
 		
-		RestartPlayer(PC);
+		RestartPlayer(Controller);
 	}
 	
 	// 重置 PlayerState 上的标记与属性
@@ -477,6 +731,9 @@ void AArcaneGameMode::EnterWarmupPhase()
 		return;
 	}
 	
+	// 回大厅 = 名单重排：旧 Bot 全部清掉，按当前配置重补
+	DestroyAllBots();
+	
 	GetWorldTimerManager().ClearTimer(RoundEndTimerHandle);
 	
 	GS->TeamScores = {0, 0};
@@ -489,6 +746,8 @@ void AArcaneGameMode::EnterWarmupPhase()
 	GS->OnPhaseChanged.Broadcast(GS->MatchPhase);
 	
 	LockAllCharacters(true);
+	
+	// AutoFillBots();
 }
 
 bool AArcaneGameMode::IsTeamWiped(int32 TeamID) const
@@ -591,6 +850,7 @@ void AArcaneGameMode::HandleMatchHasStarted()
 			bPhaseChangedDelegateBound = true;
 		}
 		
+		GS->MaxPlayersPerTeam = MaxPlayersPerTeam;
 		// 关键：连接完成 ≠ 开打。先进 Warmup（选阵营），等房主点开始。
 		GS->MatchPhase = EArcaneMatchPhase::Warmup;
 		GS->RoundNumber = 0;
@@ -600,6 +860,8 @@ void AArcaneGameMode::HandleMatchHasStarted()
 		GS->OnPhaseChanged.Broadcast(GS->MatchPhase);
 		GS->OnRoundNumberChanged.Broadcast();
 		GS->OnScoreChanged.Broadcast();
+		
+		// AutoFillBots();
 	}
 }
 

@@ -33,6 +33,7 @@ void AArcanePlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(AArcanePlayerState, TeamID);
 	DOREPLIFETIME(AArcanePlayerState, bIsDead);
 	DOREPLIFETIME(AArcanePlayerState, bIsRoomOwner);
+	DOREPLIFETIME(AArcanePlayerState, bIsBot);
 }
 
 void AArcanePlayerState::OnRep_Team()

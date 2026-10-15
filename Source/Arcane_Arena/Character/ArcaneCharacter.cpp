@@ -3,7 +3,6 @@
 
 #include "ArcaneCharacter.h"
 
-#include "AI/ArcaneAIController.h"
 #include "Camera/CameraComponent.h"
 #include "Components.h"
 #include "Components/WidgetComponent.h"
@@ -60,6 +59,12 @@ void AArcaneCharacter::InitAbilitySystem()
 		return;
 	}
 	
+	AArcanePlayerState* ArcanePS = GetPlayerState<AArcanePlayerState>();
+	if (ArcanePS == nullptr)
+	{
+		return;
+	}
+	
 	UArcaneAbilitySystemComponent* ASC = GetArcaneASC();
 	if (ASC == nullptr)
 	{
@@ -67,9 +72,6 @@ void AArcaneCharacter::InitAbilitySystem()
 		// UE_LOG(LogTemp, Warning, TEXT("[DIAG-Arcane] InitAbilitySystem: GetArcaneASC() 返回 null（PlayerState/ASC 未就绪），跳过。Pawn=%s"), *GetName());
 		return;
 	}
-
-	// [DIAG] 服务端初始化正常
-	// UE_LOG(LogTemp, Warning, TEXT("[DIAG-Arcane] InitAbilitySystem OK: Pawn=%s ASC=%s"), *GetName(), *ASC->GetName());
 	
 	// 先解绑上一个 ASC 的 Health 委托（玩家 ASC 挂 PS，跨 Pawn 存活，防止重生重复绑定）
 	if (BoundHealthASC)
@@ -77,19 +79,7 @@ void AArcaneCharacter::InitAbilitySystem()
 		BoundHealthASC->GetGameplayAttributeValueChangeDelegate(UArcaneAttributeSet::GetHealthAttribute()).RemoveAll(this);
 	}
 	
-	if (const AArcaneAIController* AIController = Cast<AArcaneAIController>(GetController()))
-	{
-		// Bot 路径：Owner = Avatar = 自己
-		ASC->InitAbilityActorInfo(this, this);
-	}
-	else
-	{
-		// 玩家路径：Owner = PlayerState，Avatar = Character
-		if (AArcanePlayerState* ArcanePS = GetPlayerState<AArcanePlayerState>())
-		{
-			ASC->InitAbilityActorInfo(ArcanePS, this);
-		}
-	}
+	ASC->InitAbilityActorInfo(ArcanePS, this);
 	
 	GrantDefaultAbilities();
 
@@ -141,6 +131,17 @@ void AArcaneCharacter::InitHealthBar()
 	}
 }
 
+void AArcaneCharacter::BeginPrimaryAttack_Implementation(FName AbilityID)
+{
+}
+
+void AArcaneCharacter::BeginSecondaryAttack_Implementation(FName AbilityID)
+{
+}
+
+void AArcaneCharacter::FinishSecondaryAttack_Implementation()
+{
+}
 
 
 void AArcaneCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

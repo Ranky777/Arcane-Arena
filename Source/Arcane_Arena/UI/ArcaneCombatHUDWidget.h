@@ -122,6 +122,8 @@ private:
 	void RefreshScores();
 	void RefreshPhaseDisplay();
 	void UpdateAbilitySlot(FAbilitySlot& Entry, float DeltaTime);
+	// 加入客户端 PlayerState 复制晚于 HUD 构造：构造时绑不上就由 NativeTick 惰性重试
+	bool TryBindLocalASC();
 	UArcaneAbilitySystemComponent* GetArcaneASC() const;
 
 	TArray<FAbilitySlot> Slots;

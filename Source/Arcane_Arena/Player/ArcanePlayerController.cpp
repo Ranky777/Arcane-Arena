@@ -208,6 +208,7 @@ void AArcanePlayerController::OnAbilityInputReleased(int32 InputID)
 	}
 }
 
+
 void AArcanePlayerController::ServerRequestChangeTeam_Implementation(int32 NewTeamID)
 {
 	if (AArcaneGameMode* GM = GetWorld()->GetAuthGameMode<AArcaneGameMode>())
@@ -237,5 +238,29 @@ void AArcanePlayerController::ServerRequestBackToLobby_Implementation()
 	if (AArcaneGameMode* GM = GetWorld()->GetAuthGameMode<AArcaneGameMode>())
 	{
 		GM->HandleBackToLobbyRequest(this);
+	}
+}
+
+void AArcanePlayerController::ServerRequestAddBot_Implementation(int32 TeamID)
+{
+	if (AArcaneGameMode* GM = GetWorld()->GetAuthGameMode<AArcaneGameMode>())
+	{
+		GM->RequestAddBot(GetPlayerState<AArcanePlayerState>(), TeamID);
+	}
+}
+
+void AArcanePlayerController::ServerRequestRemoveBot_Implementation(int32 TeamID)
+{
+	if (AArcaneGameMode* GM = GetWorld()->GetAuthGameMode<AArcaneGameMode>())
+	{
+		GM->RequestRemoveLastBot(GetPlayerState<AArcanePlayerState>(), TeamID);
+	}
+}
+
+void AArcanePlayerController::ServerRequestBalanceBots_Implementation()
+{
+	if (AArcaneGameMode* GM = GetWorld()->GetAuthGameMode<AArcaneGameMode>())
+	{
+		GM->RequestBalanceBots(GetPlayerState<AArcanePlayerState>());
 	}
 }

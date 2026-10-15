@@ -19,6 +19,8 @@ void AArcaneGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(AArcaneGameState, TeamScores);
 	DOREPLIFETIME(AArcaneGameState, RoundNumber);
 	DOREPLIFETIME(AArcaneGameState, MatchWinnerTeamID);
+	DOREPLIFETIME(AArcaneGameState, RosterVersion);
+	DOREPLIFETIME(AArcaneGameState, MaxPlayersPerTeam);
 }
 
 void AArcaneGameState::OnRep_Phase()
@@ -41,6 +43,20 @@ void AArcaneGameState::OnRep_WinnerTeam()
 	// 胜方到达时 MatchPhase 几乎同时到达，两个 OnRep 顺序不保证。
 	// 再广播一次 OnPhaseChanged，让结算面板无条件重新读一次两个值，最省事且不会漏。
 	OnPhaseChanged.Broadcast(MatchPhase);
+}
+
+void AArcaneGameState::OnRep_RosterVersion()
+{
+	OnRosterChanged.Broadcast();
+}
+
+void AArcaneGameState::NotifyRosterChanged()
+{
+	if (GetLocalRole() == ROLE_Authority)
+	{
+		RosterVersion++;
+		OnRosterChanged.Broadcast();
+	}
 }
 
 bool AArcaneGameState::IsLocalTeamWinner() const

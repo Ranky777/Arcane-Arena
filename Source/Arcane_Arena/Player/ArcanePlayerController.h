@@ -92,4 +92,14 @@ public:
 	
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Arcane|Match")
 	void ServerRequestBackToLobby();
+	
+	// 房主加/删 Bot。权限校验在 GameMode（Warmup 阶段/房主/满员），这里只转发。
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Arcane|Match")
+	void ServerRequestAddBot(int32 TeamID);
+	
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Arcane|Match")
+	void ServerRequestRemoveBot(int32 TeamID);
+	
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Arcane|Match")
+	void ServerRequestBalanceBots();
 };

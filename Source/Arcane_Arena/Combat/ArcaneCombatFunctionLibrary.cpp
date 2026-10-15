@@ -5,6 +5,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
+#include "Arcane_Arena.h"
 #include "ArcaneCombatData.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffect.h"
@@ -20,12 +21,16 @@ float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActo
 
 	if (TargetASC == nullptr || DamageGameplayEffectClass == nullptr || Damage <= 0.0f)
 	{
+		UE_LOG(LogArcane, Warning, TEXT("[Damage] 被拦：Target=%s ASC=%s GE=%s Damage=%.2f（<=0 或前置缺失）"),
+			*GetNameSafe(TargetActor), TargetASC ? TEXT("有") : TEXT("无"),
+			*GetNameSafe(*DamageGameplayEffectClass), Damage);
 		return 0.0f;
 	}
 
 	// 权威门槛：伤害只在服务器结算。客户端预测激活时调这里会直接返回 0。
 	if (TargetActor == nullptr || !TargetActor->HasAuthority())
 	{
+		UE_LOG(LogArcane, Warning, TEXT("[Damage] 被拦：Target=%s 非权威端"), *GetNameSafe(TargetActor));
 		return 0.0f;
 	}
 	
@@ -34,6 +39,8 @@ float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActo
 	const int32 TargetTeam = GetActorTeamID(TargetActor);
 	if (SourceTeam >= 0 && SourceTeam == TargetTeam)
 	{
+		UE_LOG(LogArcane, Log, TEXT("[Damage] 同队免伤：%s(队%d) → %s(队%d)"),
+			*GetNameSafe(SourceActor), SourceTeam, *GetNameSafe(TargetActor), TargetTeam);
 		return 0.0f;
 	}
 
@@ -57,7 +64,10 @@ float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActo
 	// 注入正数会变成治疗（血量越打越高）
 	SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Damage")), -Damage);
 	SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
-
+	
+	UE_LOG(LogArcane, Log, TEXT("[Damage] 结算：%s → %s 伤害 %.2f"),
+		*GetNameSafe(SourceActor), *GetNameSafe(TargetActor), Damage);
+	
 	return Damage;
 }
 

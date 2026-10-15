@@ -3,6 +3,7 @@
 
 #include "ArcaneAbilitySystemComponent.h"
 
+#include "Arcane_Arena.h"
 #include "ArcaneGameplayAbility.h"
 
 
@@ -75,6 +76,11 @@ void UArcaneAbilitySystemComponent::HandleAbilityCommitted(UGameplayAbility* Abi
 {
 	if (const UArcaneGameplayAbility* ArcaneAbility = Cast<UArcaneGameplayAbility>(Ability))
 	{
+		// 提交 = GAS 已走完 CanActivate/Cost/Cooldown 并接受这次激活。
+		// 「按了输入却没这条日志」= 门禁在 GAS 内部；「有这条但没表现」= 门禁在技能蓝图里。
+		UE_LOG(LogArcane, Log, TEXT("[GAS] %s 提交能力 %s（输入槽 %d）"),
+			*GetNameSafe(GetOwner()), *GetNameSafe(Ability), static_cast<int32>(ArcaneAbility->InputID));
+		
 		OnAbilityCommitted.Broadcast();
 	}
 }

@@ -42,6 +42,21 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_StartMatch;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_RemoveBot0;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_RemoveBot1;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_AddBot0;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_AddBot1;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_BalanceBots;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Title;
@@ -69,4 +84,19 @@ private:
 	void HandleStartClicked();
 
 	void RefreshFromGameState();
+	
+	UFUNCTION()
+	void HandleAddBot0Clicked();
+	
+	UFUNCTION()
+	void HandleAddBot1Clicked();
+	
+	UFUNCTION()
+	void HandleRemoveBot0Clicked();
+	
+	UFUNCTION()
+	void HandleRemoveBot1Clicked();
+	
+	UFUNCTION()
+	void HandleBalanceClicked();
 };
