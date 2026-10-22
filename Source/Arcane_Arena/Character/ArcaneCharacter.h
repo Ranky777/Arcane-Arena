@@ -107,6 +107,10 @@ protected:
 	// 服务器唯一发射口：主机本地激活、客户端 RPC、Bot 服务器激活三条路都收敛到这里
 	void LaunchHomingAttack(FName AbilityID, AActor* ProposedTarget, const FVector& AimPoint);
 	
+	// 本次远程射击的瞄准偏移（世界空间，cm）。基类返回零 = 完美瞄准；
+	// Bot 子类向 AI Controller 取一个带随机误差的偏移。玩家与 Bot 共用同一条发射链路。
+	virtual FVector GetHomingAimOffset() const;	
+	
 	// Server RPC 由引擎保证"只能由本 Actor 的 owning connection 发起"，
 	// 但"报哪个 Actor 当目标"不可信，所以真伪一律交给 LaunchHomingAttack 内的 ResolveLockTarget
 	UFUNCTION(Server, Reliable)

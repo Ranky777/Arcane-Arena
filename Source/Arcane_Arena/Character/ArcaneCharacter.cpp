@@ -379,13 +379,16 @@ void AArcaneCharacter::LaunchHomingAttack(FName AbilityID, AActor* ProposedTarge
 	// 一个都没有 → nullptr，下面按"直线弹"处理，不浪费这次技能
 	AActor* Target = UArcaneCombatFunctionLibrary::ResolveLockTarget(this, Muzzle, Row.Range, ProposedTarget);
 	
+	// 只有真正要发射时才掷误差；玩家/Host 的 Character 基类实现恒为零
+	const FVector AimOffset = GetHomingAimOffset();
+	
 	FVector Direction = FVector::ZeroVector;
 	float TravelDistance = Row.Range;
 	FVector ClampedAimPoint = AimPoint;
 	
 	if (Target != nullptr)
 	{
-		const FVector AimAt = Target->GetActorLocation() + FVector(0.0f, 0.0f, ProjectileSpawnHeight);
+		const FVector AimAt = Target->GetActorLocation() + FVector(0.0f, 0.0f, ProjectileSpawnHeight) + AimOffset;
 		Direction = (AimAt - Muzzle).GetSafeNormal();
 	}
 	else
@@ -393,7 +396,7 @@ void AArcaneCharacter::LaunchHomingAttack(FName AbilityID, AActor* ProposedTarge
 		// AimPoint 是世界坐标，可能是 (0,0,0)（竞技场中心），不能拿零向量判断“没瞄准”。
 		// 光标可以指到屏幕外，真正的落点必须钳进施法射程：
 		// 方向、飞行距离、调试球全部以这一个点为准，避免弹体“看起来飞出了射程”。
-		ClampedAimPoint = Muzzle + (AimPoint - Muzzle).GetClampedToMaxSize(Row.Range);
+		ClampedAimPoint = Muzzle + (AimPoint + AimOffset - Muzzle).GetClampedToMaxSize(Row.Range);
 		
 		const FVector ToAim = ClampedAimPoint - Muzzle;
 		Direction = ToAim.GetSafeNormal();
@@ -417,7 +420,7 @@ void AArcaneCharacter::LaunchHomingAttack(FName AbilityID, AActor* ProposedTarge
 	
 	// Owner/Instigator 决定伤害归属与友军门禁；InitShot 必须夹在 Deferred 与 FinishSpawning 之间，
 	// 因为碰撞半径要在第一次扫掠之前生效
-	Projectile->InitShot(this, Target, AbilityID, Direction, TravelDistance, Row);
+	Projectile->InitShot(this, Target, AbilityID, Direction, TravelDistance, Row, AimOffset);
 	Projectile->FinishSpawning(SpawnTransform);
 	
 	if (CVarDrawHomingRange.GetValueOnGameThread())
@@ -432,11 +435,16 @@ void AArcaneCharacter::LaunchHomingAttack(FName AbilityID, AActor* ProposedTarge
 		}
 	}
 	
-	UE_LOG(LogArcane, Log, TEXT("[HomingAttack] %s 发射 %s｜建议=%s｜裁决=%s｜飞行=%.0f/%.0f｜Muzzle=%s｜Aim=%s｜Dir=%s"),
-	*GetName(), *AbilityID.ToString(),
-	*GetNameSafe(ProposedTarget), Target ? *GetNameSafe(Target) : TEXT("无（飞向瞄准点）"),
-	TravelDistance, Row.Range,
-	*Muzzle.ToString(), *AimPoint.ToString(), *Direction.ToString());
+	UE_LOG(LogArcane, Log, TEXT("[HomingAttack] %s 发射 %s｜建议=%s｜裁决=%s｜飞行=%.0f/%.0f｜Muzzle=%s｜Aim=%s｜Offset=%s｜Dir=%s"),
+		*GetName(), *AbilityID.ToString(),
+		*GetNameSafe(ProposedTarget), Target ? *GetNameSafe(Target) : TEXT("无（飞向瞄准点）"),
+		TravelDistance, Row.Range,
+		*Muzzle.ToString(), *AimPoint.ToString(), *AimOffset.ToString(), *Direction.ToString());
+}
+
+FVector AArcaneCharacter::GetHomingAimOffset() const
+{
+	return FVector::ZeroVector;
 }
 
 void AArcaneCharacter::ServerRequestHomingAttack_Implementation(FName AbilityID, AActor* ProposedTarget, FVector AimPoint)

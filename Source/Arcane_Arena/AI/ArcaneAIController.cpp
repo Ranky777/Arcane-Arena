@@ -6,6 +6,9 @@
 #include "Arcane_Arena.h"
 #include "EngineUtils.h"
 #include "Character/ArcaneBotCharacter.h"
+#include "Combat/ArcaneCombatData.h"
+#include "Combat/ArcaneCombatDataLibrary.h"
+#include "Combat/ArcaneCombatFunctionLibrary.h"
 #include "Components/StateTreeAIComponent.h"
 #include "Framework/ArcaneGameState.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
@@ -194,7 +197,31 @@ float AArcaneAIController::GetTargetHealthFraction() const
 
 bool AArcaneAIController::IsAbilityReady(TSubclassOf<UGameplayAbility> AbilityClass) const
 {
-	return HasAbilitySpec(AbilityClass) && GetAbilityCooldownRemaining(AbilityClass) <= 0.0f;
+	return HasAbilitySpec(AbilityClass) && GetAbilityCooldownRemaining(AbilityClass) <= 0.0 && HasEnoughEnergyForAbility(AbilityClass);
+}
+
+bool AArcaneAIController::HasEnoughEnergyForAbility(TSubclassOf<UGameplayAbility> AbilityClass) const
+{
+	const UArcaneGameplayAbility* AbilityCDO = AbilityClass ? Cast<UArcaneGameplayAbility>(AbilityClass.GetDefaultObject()) : nullptr;
+	if (AbilityCDO == nullptr || AbilityCDO->AbilityID.IsNone())
+	{
+		return false;
+	}
+	
+	bool bFound = false;
+	const FArcaneAbilityRow Row = UArcaneCombatDataLibrary::GetAbilityRow(AbilityCDO->AbilityID, bFound);
+	if (!bFound)
+	{
+		return false;
+	}
+	
+	const UArcaneAbilitySystemComponent* ASC = GetBotASC();
+	if (ASC == nullptr)
+	{
+		return false;
+	}
+	
+	return ASC->GetNumericAttribute(UArcaneAttributeSet::GetEnergyAttribute()) >= Row.EnergyCost;
 }
 
 bool AArcaneAIController::HasAbilitySpec(TSubclassOf<UGameplayAbility> AbilityClass) const
@@ -224,6 +251,41 @@ float AArcaneAIController::GetAbilityCooldownRemaining(TSubclassOf<UGameplayAbil
 	ASC->GetCooldownTimes(AbilityCDO->InputID, Remaining, Duration);
 	
 	return Remaining;
+}
+
+bool AArcaneAIController::IsTargetInAbilityRange(TSubclassOf<UGameplayAbility> AbilityClass) const
+{
+	const UArcaneGameplayAbility* AbilityCDO = AbilityClass ? Cast<UArcaneGameplayAbility>(AbilityClass.GetDefaultObject()) : nullptr;
+	if (AbilityCDO == nullptr || AbilityCDO->AbilityID.IsNone())
+	{
+		return false;
+	}
+	
+	bool bFound = false;
+	const FArcaneAbilityRow Row = UArcaneCombatDataLibrary::GetAbilityRow(AbilityCDO->AbilityID, bFound);
+	
+	return bFound && GetTargetDistance() <= Row.Range;
+}
+
+bool AArcaneAIController::HasLineOfSightToTarget() const
+{
+	AActor* Target = ResolveEnemyTarget();
+	
+	// 复用服务器裁决同一条规则：敌我/存活/视线，避免 AI 和服务器各写一套
+	return Target != nullptr && UArcaneCombatFunctionLibrary::IsLockableTarget(GetPawn(), Target);
+}
+
+FVector AArcaneAIController::RollHomingAimError() const
+{
+	if (HomingAimErrorRadius <= 0.0f)
+	{
+		return FVector::ZeroVector;
+	}
+	
+	// 只做水平面误差：竖直误差容易让弹体主动扎地，看起来更像 Bug 而不是枪法差
+	const FVector2D Disc = FMath::RandPointInCircle(HomingAimErrorRadius);
+	
+	return FVector(Disc.X, Disc.Y, 0.0f);
 }
 
 bool AArcaneAIController::IsEnemyChargingThreat() const

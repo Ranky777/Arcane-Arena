@@ -18,6 +18,9 @@ struct FArcaneBotFactsInstanceData
 	UPROPERTY(EditAnywhere, Category = "Parameter")
 	TSubclassOf<UGameplayAbility> SecondaryAbility;
 	
+	UPROPERTY(EditAnywhere, Category = "Parameter")
+	TSubclassOf<UGameplayAbility> HomingAbility;
+	
 	// —— 计算结果（每帧 Tick 刷新；条件/考虑项从这里绑）——
 	UPROPERTY(EditAnywhere, Category = "Default")
 	const AActor* TargetActor = nullptr;
@@ -45,6 +48,15 @@ struct FArcaneBotFactsInstanceData
 	
 	UPROPERTY(EditAnywhere, Category = "Default")
 	bool bSecondaryReady = false;
+	
+	UPROPERTY(EditAnywhere, Category = "Default")
+	bool bHomingReady = false;
+	
+	UPROPERTY(EditAnywhere, Category = "Default")
+	bool bHomingInRange = false;
+	
+	UPROPERTY(EditAnywhere, Category = "Default")
+	bool bHomingHasLineOfSight = false;
 	
 	UPROPERTY(EditAnywhere, Category = "Default")
 	bool bDashReady = false;

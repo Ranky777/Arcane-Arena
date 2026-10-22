@@ -27,6 +27,8 @@ protected:
 	
 	virtual void PostInitializeComponents() override;
 	
+	virtual FVector GetHomingAimOffset() const override;
+	
 	UPROPERTY(VisibleAnywhere, Category = "Arcane|Camera")
 	TObjectPtr<USpringArmComponent> SpectateBoom;
 	

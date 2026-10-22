@@ -30,7 +30,8 @@ public:
 	 * 服务器发射专用：SpawnActorDeferred → InitShot → FinishSpawning。
 	 * 必须在 FinishSpawning 之前调用：碰撞半径要早于第一次扫掠生效。
 	 */
-	void InitShot(AActor* InShooter, AActor* InTarget, FName InAbilityID, const FVector& InInitialDirection, float InMaxTravelDistance, const FArcaneAbilityRow& Row);
+	void InitShot(AActor* InShooter, AActor* InTarget, FName InAbilityID, const FVector& InInitialDirection, 
+		float InMaxTravelDistance, const FArcaneAbilityRow& Row, const FVector& InHomingOffset);
 
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arcane|Combat")
@@ -53,6 +54,8 @@ private:
 	TWeakObjectPtr<AActor> HomingTarget;
 	FName AbilityID;
 	FVector FireOrigin = FVector::ZeroVector;
+	// AI 瞄准误差：只偏移追踪点，不改变目标合法性；玩家路径恒为零
+	FVector HomingOffset = FVector::ZeroVector;
 	
 	float Speed = 0.0f;
 	float TurnRateDeg = 0.0f; // 0 = 直线弹

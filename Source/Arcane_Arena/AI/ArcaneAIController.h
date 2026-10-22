@@ -59,11 +59,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arcane|AI")
 	bool IsAbilityReady(TSubclassOf<UGameplayAbility> AbilityClass) const;
 	
+	// 技能不仅要冷却好，还要付得起 DT_AbilityTable 里的 EnergyCost
+	bool HasEnoughEnergyForAbility(TSubclassOf<UGameplayAbility> AbilityClass) const;
+	
 	// 能力是否已授予到 Bot 的 ASC。单独拆出来：诊断日志要区分"没授予"和"在冷却"两种失败
 	bool HasAbilitySpec(TSubclassOf<UGameplayAbility> AbilityClass) const;
 	
 	// 该技能剩余冷却秒数；0 = 不在冷却（未授予/无输入槽/无冷却标签都返回 0）
 	float GetAbilityCooldownRemaining(TSubclassOf<UGameplayAbility> AbilityClass) const;
+	
+	// 目标是否在指定技能的施法射程内。射程读 DT_AbilityTable，不在 AI 里复制一份 800
+	UFUNCTION(BlueprintPure, Category = "Arcane|AI")
+	bool IsTargetInAbilityRange(TSubclassOf<UGameplayAbility> AbilityClass) const;
+	
+	// 目标是否满足锁定条件（存活/敌对/无遮挡）；防止 Bot 隔墙交远程技能
+	UFUNCTION(BlueprintPure, Category = "Arcane|AI")
+	bool HasLineOfSightToTarget() const;
+	
+	// 每发远程技能在水平面内滚一个误差偏移（cm）。0 = 完美瞄准。
+	// 只在服务器发射时调用，不复制；玩家路径不会走到这里。
+	FVector RollHomingAimError() const;
 	
 	// 当前目标正在释放蓄力威胁技（GA 运行期间其 AssetTags 挂在目标 ASC 上）
 	UFUNCTION(BlueprintPure, Category = "Arcane|AI")
@@ -129,6 +144,11 @@ protected:
 	// Dash 技能（BP_ArcaneAIController 默认值配置）
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Bot")
 	TSubclassOf<UGameplayAbility> DashAbilityClass;
+	
+	// 远程技能瞄准误差半径（cm，水平面内均匀采样）。
+	// 0 = 百发百中；有效命中半径约为“弹体半径 + 目标胶囊半径”（当前约 35 + 42 = 77cm）。
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Bot|Aim", meta = (ClampMin = "0.0"))
+	float HomingAimErrorRadius = 100.0f;
 	
 	// 敌方"蓄力中"标记 = GA_SecondaryAttack 的 AssetTags 之一（GA 激活期间自动挂 ASC）
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Bot")

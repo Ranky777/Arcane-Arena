@@ -1,5 +1,6 @@
 #include "ArcaneBotCharacter.h"
 
+#include "AI/ArcaneAIController.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Framework/ArcaneGameInstance.h"
@@ -39,4 +40,11 @@ void AArcaneBotCharacter::PostInitializeComponents()
 	AutoPossessAI = EAutoPossessAI::Disabled;
 	
 	Super::PostInitializeComponents();
+}
+
+FVector AArcaneBotCharacter::GetHomingAimOffset() const
+{
+	const AArcaneAIController* AI = Cast<AArcaneAIController>(GetController());
+	
+	return AI ? AI->RollHomingAimError() : FVector::ZeroVector;
 }

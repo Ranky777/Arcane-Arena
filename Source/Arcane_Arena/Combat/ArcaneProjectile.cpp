@@ -43,11 +43,13 @@ AArcaneProjectile::AArcaneProjectile()
 }
 
 void AArcaneProjectile::InitShot(AActor* InShooter, AActor* InTarget, FName InAbilityID,
-	const FVector& InInitialDirection, float InMaxTravelDistance, const FArcaneAbilityRow& Row)
+                                 const FVector& InInitialDirection, float InMaxTravelDistance, const FArcaneAbilityRow& Row, 
+                                 const FVector& InHomingOffset)
 {
 	Shooter = InShooter;
 	HomingTarget = InTarget;
 	AbilityID = InAbilityID;
+	HomingOffset = InHomingOffset;
 	
 	// InitShot 传进来的是世界方向。MovementComp 默认 bInitialVelocityInLocalSpace=true，
 	// FinishSpawning 的 InitializeComponent 会把它当成局部方向，再按 SpawnTransform 的旋转转一次。
@@ -197,7 +199,7 @@ void AArcaneProjectile::Tick(float DeltaTime)
 	}
 	
 	const FVector CurrentDir = MovementComp->Velocity.GetSafeNormal();
-	const FVector DesiredDir = (Target->GetActorLocation() + FVector(0.0f, 0.0f, ArcaneBoltAimZ) - GetActorLocation()).GetSafeNormal();
+	const FVector DesiredDir = (Target->GetActorLocation() + FVector(0.0f, 0.0f, ArcaneBoltAimZ) + HomingOffset - GetActorLocation()).GetSafeNormal();
 	
 	MovementComp->Velocity = SteerToward(CurrentDir, DesiredDir, DeltaTime) * Speed;
 }

@@ -34,6 +34,11 @@ void FArcaneBotFactsEvaluator::Tick(FStateTreeExecutionContext& Context, const f
 	Data.bEnemyChargingThreat = Controller->IsEnemyChargingThreat();
 	Data.bPrimaryReady = Controller->IsAbilityReady(Data.PrimaryAbility);
 	Data.bSecondaryReady = Controller->IsAbilityReady(Data.SecondaryAbility);
+	Data.bHomingReady = Controller->IsAbilityReady(Data.HomingAbility);
+	Data.bHomingInRange = Controller->IsTargetInAbilityRange(Data.HomingAbility);
+	// 只有“技能就绪且在射程内”才做视线检测，避免每帧每个 Bot 都打一条 Trace
+	Data.bHomingHasLineOfSight = Data.bHomingReady && Data.bHomingInRange
+		&& Controller->HasLineOfSightToTarget();
 	Data.bDashReady = Controller->IsAbilityReady(Controller->GetDashAbilityClass());
 	
 	if (CVarArcaneBotDebug.GetValueOnGameThread())
@@ -45,7 +50,8 @@ void FArcaneBotFactsEvaluator::Tick(FStateTreeExecutionContext& Context, const f
 			
 			UE_LOG(LogArcane, Log,
 				TEXT("[BotFacts] %s | target=%s dist=%.0f range=%.0f inRange=%d dead=%d threat=%d hp=%.2f || "
-					 "P spec=%d cd=%.2f ready=%d | S spec=%d cd=%.2f ready=%d | D spec=%d cd=%.2f ready=%d"),
+					 "P spec=%d cd=%.2f ready=%d | S spec=%d cd=%.2f ready=%d | D spec=%d cd=%.2f ready=%d | "
+					 "H spec=%d cd=%.2f ready=%d range=%d los=%d"),
 				*Controller->GetName(),
 				*GetNameSafe(Data.TargetActor),
 				Data.TargetDistance,
@@ -62,7 +68,12 @@ void FArcaneBotFactsEvaluator::Tick(FStateTreeExecutionContext& Context, const f
 				Data.bSecondaryReady ? 1 : 0,
 				Controller->HasAbilitySpec(Controller->GetDashAbilityClass()) ? 1 : 0,
 				Controller->GetAbilityCooldownRemaining(Controller->GetDashAbilityClass()),
-				Data.bDashReady ? 1 : 0);
+				Data.bDashReady ? 1 : 0,
+				Controller->HasAbilitySpec(Data.HomingAbility) ? 1 : 0,
+				Controller->GetAbilityCooldownRemaining(Data.HomingAbility),
+				Data.bHomingReady ? 1 : 0,
+				Data.bHomingInRange ? 1 : 0,
+				Data.bHomingHasLineOfSight ? 1 : 0);
 		}
 	}
 }
