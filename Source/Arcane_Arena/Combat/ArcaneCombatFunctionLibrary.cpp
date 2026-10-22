@@ -10,8 +10,14 @@
 #include "GameFramework/Actor.h"
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
+#include "Character/ArcaneCharacter.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/ArcanePlayerState.h"
+#include "TargetingSystem/TargetingSubsystem.h"
+
+
+// 瞄准点抬到胸部：GetActorLocation 是胶囊中心，打脚底会命中率偏低
+static constexpr float ArcaneLockOnAimZ = 60.0f;
 
 float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActor* TargetActor,
                                                       TSubclassOf<UGameplayEffect> DamageGameplayEffectClass, float Damage, const FHitResult& HitResult)
@@ -166,4 +172,149 @@ int32 UArcaneCombatFunctionLibrary::GetActorTeamID(const AActor* Actor)
 	}
 	
 	return -1;
+}
+
+FVector UArcaneCombatFunctionLibrary::BuildDisplacementImpulse(const FArcaneImpactRow& ImpactRow,
+	const FVector& SourceLocation, const FVector& TargetLocation, const FVector& HitNormal)
+{
+	FVector Direction = FVector::ZeroVector;
+	switch (ImpactRow.DirectionMode)
+	{
+	case EArcaneDirectionMode::AlongHitNormal:
+		Direction = -HitNormal;
+		break;
+	case EArcaneDirectionMode::AwayFromSource:
+		// 只取平面方向：竖直交给 VerticalImpulse，否则击退会变成斜向上
+		Direction = (TargetLocation - SourceLocation).GetSafeNormal2D();
+		break;
+	default:
+		return FVector::ZeroVector;
+	}
+	
+	return Direction * ImpactRow.HorizontalImpulse + FVector::UpVector * ImpactRow.VerticalImpulse;
+}
+
+AActor* UArcaneCombatFunctionLibrary::ResolveLockTarget(AActor* SourceActor, const FVector& FromLocation,
+	float MaxRadius, AActor* ProposedTarget)
+{
+	if (SourceActor == nullptr || SourceActor->GetWorld() == nullptr)
+	{
+		return nullptr;
+	}
+	
+	// 服务器只裁决，不替控制方做主：候选过不了校验就返回空，由调用方决定发直线弹。
+	// 这里原本有一段"射程内最近的敌人"兜底，后果是玩家明明没指着人（客户端环内为空），
+	// 弹却自己飞去找最近的敌人打 —— 施法范围失去意义，手感不可预期。
+	if (IsLockableCharacter(SourceActor, FromLocation, ProposedTarget, MaxRadius))
+	{
+		return ProposedTarget;
+	}
+	
+	return nullptr;
+}
+
+bool UArcaneCombatFunctionLibrary::IsLockableTarget(AActor* SourceActor, AActor* Candidate)
+{
+	// MaxRadius 传 -1 = 不比距离：客户端的"选敌范围"是 Preset 里的环形半径，
+	// 服务器的"选敌范围"是 AbilityTable 的 Range，两边各管各的，规则本体共用这一个函数
+	return IsLockableCharacter(SourceActor, SourceActor ? SourceActor->GetActorLocation() : FVector::ZeroVector, Candidate, -1.0f);
+}
+
+AActor* UArcaneCombatFunctionLibrary::GetFirstTargetingResult(const UWorld* World,
+	FTargetingRequestHandle TargetingHandle)
+{
+	UTargetingSubsystem* Targeting = UTargetingSubsystem::Get(World);
+	if (Targeting == nullptr)
+	{
+		return nullptr;
+	}
+	
+	TArray<AActor*> Results;
+	Targeting->GetTargetingResultsActors(TargetingHandle, Results);
+	return Results.Num() > 0 ? Results[0] : nullptr;
+}
+
+FVector UArcaneCombatFunctionLibrary::GetTargetingAimPoint(FTargetingRequestHandle TargetingHandle)
+{
+	if (const FTargetingSourceContext* Context = FTargetingSourceContext::Find(TargetingHandle))
+	{
+		return Context->SourceLocation;
+	}
+	
+	return FVector::ZeroVector;
+}
+
+bool UArcaneCombatFunctionLibrary::TryGetCursorGroundPoint(const APlayerController* PC, const AActor* IgnoreActor,
+	float TraceDistance, float FallbackDistance, FVector& OutPoint)
+{
+	if (PC == nullptr)
+	{
+		return false;
+	}
+	
+	FVector RayOrigin;
+	FVector RayDirection;
+	
+	if (!PC->DeprojectMousePositionToWorld(RayOrigin, RayDirection))
+	{
+		return false;
+	}
+ 
+	UWorld* World = PC->GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+ 
+	// 与原来的 ArcaneLockCursor 完全一致：ECC_Pawn，忽略 PC 和施法者自己
+	FHitResult Hit;
+	FCollisionQueryParams Params(FName("ArcaneCursorGround"), false, PC);
+	if (IgnoreActor != nullptr)
+	{
+		Params.AddIgnoredActor(IgnoreActor);
+	}
+ 
+	const FVector RayEnd = RayOrigin + RayDirection * TraceDistance;
+	if (World->LineTraceSingleByChannel(Hit, RayOrigin, RayEnd, ECC_Pawn, Params))
+	{
+		OutPoint = Hit.ImpactPoint;
+	}
+	else
+	{
+		OutPoint = RayOrigin + RayDirection * FallbackDistance;
+	}
+ 
+	return true;
+}
+
+bool UArcaneCombatFunctionLibrary::IsLockableCharacter(AActor* SourceActor, const FVector& FromLocation,
+                                                       AActor* Candidate, float MaxRadius)
+{
+	const AArcaneCharacter* Character = Cast<AArcaneCharacter>(Candidate);
+	if (Character == nullptr || Character == SourceActor || Character->bIsDead)
+	{
+		return false;
+	}
+	
+	const int32 SourceTeam = GetActorTeamID(SourceActor);
+	const int32 TargetTeam = GetActorTeamID(Character);
+	// 无阵营（箱子/假人/未分队）与同队都不是锁定对象
+	if (TargetTeam < 0 || (SourceTeam >= 0 && SourceTeam == TargetTeam))
+	{
+		return false;
+	}
+	
+	// MaxRadius < 0 = 调用方不在这个函数里管距离
+	if (MaxRadius >= 0.0f && FVector::Dist(FromLocation, Character->GetActorLocation()) > MaxRadius)
+	{
+		return false;
+	}
+	
+	// 视线：从出膛点到目标胸部，命中目标自己不视为遮挡（把它加进 ignore，"打到它"与"通路"等价）
+	FHitResult Blocker;
+	FCollisionQueryParams Params(FName("ArcaneLockOn"), false, SourceActor);
+	Params.AddIgnoredActor(Character);
+	const FVector ToLocation = Character->GetActorLocation() + FVector(0.0f, 0.0f, ArcaneLockOnAimZ);
+	
+	return !SourceActor->GetWorld()->LineTraceSingleByChannel(Blocker, FromLocation, ToLocation, ECC_Visibility, Params);
 }

@@ -49,6 +49,11 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Arcane|Combat")
 	void FinishSecondaryAttack();
 	
+	// 远程锁定技契约。ProposedTarget 是"建议"而非结论：
+	// 玩家=客户端本地选敌管线算出的，Bot=服务器跑同一条管线的结果，两者都要经服务器重算。
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Arcane|Combat")
+	void BeginHomingAttack(FName AbilityID, AActor* ProposedTarget, FVector AimPoint);
+	
 	// 回合/房间阶段锁定：为 true 时不能移动、不能放技能（选阵营与结算期间）。
 	// Replicated：服务端加锁后，客户端各自禁掉自己的输入（InputComponent 只在客户端有意义）。
 	UPROPERTY(ReplicatedUsing = OnRep_MatchLocked, BlueprintReadOnly, Category = "Arcane|Match")
@@ -68,6 +73,10 @@ public:
 	// Enhanced Input 的 IA_Move 直接调 AddMovementInput，不经过 AController::IgnoreMoveInput，
 	// 所以只 SetIgnoreMoveInput(true) 是锁不住的，必须在输入入口拦。
 	virtual void AddMovementInput(FVector WorldDirection, float ScaleValue = 1.0f, bool bForce = false) override;
+	
+	// 死亡标记（权威端置位并复制；客户端经 OnRep 做表现）
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_IsDead, Category = "Arcane|State")
+	bool bIsDead = false;
 	
 protected:
 	// IA_Jump 同理：锁定时不吃跳跃输入，避免起跳把 MovementMode 顶成 Falling。
@@ -94,9 +103,22 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|UI")
 	TSubclassOf<UArcaneUserWidget> HealthBarWidgetClass;
 	
-	// 死亡标记（权威端置位并复制；客户端经 OnRep 做表现）
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_IsDead, Category = "Arcane|State")
-	bool bIsDead = false;
+	// —— 远程锁定技：发射与 RPC ——
+	// 服务器唯一发射口：主机本地激活、客户端 RPC、Bot 服务器激活三条路都收敛到这里
+	void LaunchHomingAttack(FName AbilityID, AActor* ProposedTarget, const FVector& AimPoint);
+	
+	// Server RPC 由引擎保证"只能由本 Actor 的 owning connection 发起"，
+	// 但"报哪个 Actor 当目标"不可信，所以真伪一律交给 LaunchHomingAttack 内的 ResolveLockTarget
+	UFUNCTION(Server, Reliable)
+	void ServerRequestHomingAttack(FName AbilityID, AActor* ProposedTarget, FVector AimPoint);
+	
+	// 出膛点 = ActorLocation + Forward*SpawnForward + Up*SpawnHeight。
+	// 不依赖骨骼插槽：玩家骨架与 Bot 骨架不同也能共用一条规则
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Combat", meta = (ClampMin = "0.0"))
+	float ProjectileSpawnForward = 80.0f;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Combat", meta = (ClampMin = "0.0"))
+	float ProjectileSpawnHeight = 60.0f;
 	
 	void OnHealthChanged(const FOnAttributeChangeData& Data);
 	

@@ -11,6 +11,7 @@
 class UArcaneLobbyPanelWidget;
 class UArcaneMatchResultPanelWidget;
 class UArcaneAbilitySystemComponent;
+class AArcanePlayerController;
 class UBorder;
 class UImage;
 class UPanelWidget;
@@ -19,12 +20,14 @@ class UTextBlock;
 
 /**
  * 战斗 HUD 总控：GameState 四委托、阶段显隐、比分/回合文本、能量条、
- * 三技能槽冷却全部收口在 C++；WBP_ArcaneHUD 只保留版式。
+ * 三技能槽冷却、观战提示条全部收口在 C++；WBP_ArcaneHUD 只保留版式。
  *
  * 控件命名约定（迁移时在 WBP 里改名，缺失的可选绑定会自动降级）：
  * Group_ScoreBar / Group_AbilityBar / Panel_Lobby / Panel_Result /
- * Text_Team0Score / Text_Round / Text_Team1Score / Text_Phase / EnergyBar /
- * Icon_Dash|Secondary|Ultimate / Border_Dash|... / Text_CD_Dash|...
+ * Text_Team0Score / Text_Round / Text_Team1Score / Text_Team0Alive / Text_Team1Alive /
+ * Text_Phase / EnergyBar /
+ * Icon_Dash|Secondary|Ultimate / Border_Dash|... / Text_CD_Dash|... /
+ * Text_Spectate
  */
 UCLASS()
 class ARCANE_ARENA_API UArcaneCombatHUDWidget : public UArcaneUserWidget
@@ -60,8 +63,19 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Team1Score;
 
+	// 双方场上存活数（Bot 也算在场成员，和计分局的团灭判定同一套人）
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Team0Alive;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Team1Alive;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Phase;
+
+	// —— 观战提示条（本地观战态驱动，默认收起）——
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Spectate;
 
 	// —— 能量条 ——
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -119,18 +133,30 @@ private:
 	UFUNCTION()
 	void HandleAbilityCommitted();
 
+	UFUNCTION()
+	void HandleSpectateTargetChanged(AActor* NewTarget);
+
 	void RefreshScores();
 	void RefreshPhaseDisplay();
+	// 存活数由已复制的 PlayerState 现算（TeamID + bIsDead），不另存一份复制状态；
+	// 数字没变就不碰文本，避免每帧让字形重排
+	void RefreshAliveCounts();
 	void UpdateAbilitySlot(FAbilitySlot& Entry, float DeltaTime);
 	// 加入客户端 PlayerState 复制晚于 HUD 构造：构造时绑不上就由 NativeTick 惰性重试
 	bool TryBindLocalASC();
+	bool TryBindSpectateDelegate();
 	UArcaneAbilitySystemComponent* GetArcaneASC() const;
 
 	TArray<FAbilitySlot> Slots;
 
+	// 观战委托绑在本地 PC 上（AddDynamic 无句柄，Destruct 按对象 RemoveDynamic）
+	TWeakObjectPtr<AArcanePlayerController> BoundSpectatePC;
+
 	float TargetEnergy = 1.0f;
 	float CurrentEnergy = 1.0f;
 	float MaxEnergySeen = 1.0f;
+
+	int32 CachedTeamAlive[2] = { -1, -1 };
 
 	// 冷却刚结束时做一次亮色回弹标记
 	TMap<int32, float> SlotFlashTimers;

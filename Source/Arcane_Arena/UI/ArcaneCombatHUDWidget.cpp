@@ -11,6 +11,9 @@
 #include "Engine/World.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneAttributeSet.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "Player/ArcanePlayerController.h"
 #include "Player/ArcanePlayerState.h"
 #include "UI/ArcaneLobbyPanelWidget.h"
 #include "UI/ArcaneMatchResultPanelWidget.h"
@@ -39,6 +42,13 @@ void UArcaneCombatHUDWidget::NativeOnConstructed()
 	// 还没复制到 —— 这里失败不致命，NativeTick 里 TryBindLocalASC 会补绑。
 	TryBindLocalASC();
 
+	// 观战提示条：绑本地 PC 的目标切换委托；初始收起（没死过就永远不该亮）
+	TryBindSpectateDelegate();
+	if (Text_Spectate)
+	{
+		Text_Spectate->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
 	if (AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>())
 	{
 		GS->OnScoreChanged.AddDynamic(this, &UArcaneCombatHUDWidget::HandleScoreChanged);
@@ -48,6 +58,7 @@ void UArcaneCombatHUDWidget::NativeOnConstructed()
 
 	RefreshScores();
 	RefreshPhaseDisplay();
+	RefreshAliveCounts();
 
 	// —— 主题：比分条/技能栏卡片底 + 能量条药丸化；冷却遮罩套圆角刷（着色仍由
 	// UpdateAbilitySlot 的 SetBrushColor 负责，画刷 Tint 保持纯白做乘法基底）——
@@ -108,6 +119,24 @@ bool UArcaneCombatHUDWidget::TryBindLocalASC()
 	return true;
 }
 
+bool UArcaneCombatHUDWidget::TryBindSpectateDelegate()
+{
+	if (BoundSpectatePC.IsValid())
+	{
+		return true;
+	}
+
+	AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer());
+	if (PC == nullptr)
+	{
+		return false;
+	}
+
+	BoundSpectatePC = PC;
+	PC->OnSpectateTargetChanged.AddDynamic(this, &UArcaneCombatHUDWidget::HandleSpectateTargetChanged);
+	return true;
+}
+
 void UArcaneCombatHUDWidget::NativeDestruct()
 {
 	if (AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>())
@@ -121,6 +150,12 @@ void UArcaneCombatHUDWidget::NativeDestruct()
 	{
 		ArcaneASC->OnAbilityCommitted.RemoveDynamic(this, &UArcaneCombatHUDWidget::HandleAbilityCommitted);
 	}
+
+	if (AArcanePlayerController* PC = BoundSpectatePC.Get())
+	{
+		PC->OnSpectateTargetChanged.RemoveDynamic(this, &UArcaneCombatHUDWidget::HandleSpectateTargetChanged);
+	}
+	BoundSpectatePC = nullptr;
 
 	Slots.Empty();
 
@@ -156,6 +191,37 @@ void UArcaneCombatHUDWidget::HandleAbilityCommitted()
 	}
 }
 
+void UArcaneCombatHUDWidget::HandleSpectateTargetChanged(AActor* NewTarget)
+{
+	if (Text_Spectate == nullptr)
+	{
+		return;
+	}
+
+	// LeaveSpectatorMode 广播 nullptr → 收起
+	if (NewTarget == nullptr)
+	{
+		Text_Spectate->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	// Bot 与人机同规则：Pawn → PlayerState → 名字（Phase 9 身份统一后这条路径通用）
+	FString TargetName = TEXT("???");
+	if (const APawn* TargetPawn = Cast<APawn>(NewTarget))
+	{
+		if (const APlayerState* PS = TargetPawn->GetPlayerState<APlayerState>())
+		{
+			TargetName = PS->GetPlayerName();
+		}
+	}
+
+	Text_Spectate->SetText(FText::FromString(FString::Printf(
+		TEXT("正在观战 %s    E / 滚轮下 下一位 · Q / 滚轮上 上一位"), *TargetName)));
+	Text_Spectate->SetVisibility(ESlateVisibility::HitTestInvisible);
+	ArcaneUIStyle::ApplyText(Text_Spectate, ArcaneUITheme::FontBody, ArcaneUITheme::TextSecondary);
+	Text_Spectate->SetJustification(ETextJustify::Center);
+}
+
 void UArcaneCombatHUDWidget::RefreshScores()
 {
 	const AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>();
@@ -179,8 +245,47 @@ void UArcaneCombatHUDWidget::RefreshScores()
 	}
 	if (Text_Round)
 	{
-		Text_Round->SetText(FText::FromString(FString::Printf(TEXT("第 %d 回合"), GS->RoundNumber)));
+		Text_Round->SetText(FText::FromString(FString::Printf(TEXT("第 %d 回合 · 先赢 %d 局"), GS->RoundNumber, FMath::Max(1, GS->RoundsToWin))));
 		ArcaneUIStyle::ApplyText(Text_Round, ArcaneUITheme::FontBody, ArcaneUITheme::TextSecondary);
+	}
+}
+
+void UArcaneCombatHUDWidget::RefreshAliveCounts()
+{
+	const AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>();
+	if (GS == nullptr)
+	{
+		return;
+	}
+
+	// 存活数就地从复制下来的 PlayerState 现算（TeamID + bIsDead 都已经是权威镜像），
+	// 不再往 GameState 塞一份派生副本 —— 两处真相迟早对不上。
+	// Bot 计入：它和真人一样占场地、一样被团灭判定数（AArcaneGameMode::IsTeamWiped 同一套人）。
+	// 比分条固定左右两栏，两队是全局前提 → 写死 2，不做通用化。
+	int32 Alive[2] = { 0, 0 };
+	for (const APlayerState* PS : GS->PlayerArray)
+	{
+		const AArcanePlayerState* ArcPS = Cast<AArcanePlayerState>(PS);
+		if (ArcPS == nullptr || ArcPS->bIsDead || ArcPS->TeamID < 0 || ArcPS->TeamID >= 2)
+		{
+			continue;
+		}
+		Alive[ArcPS->TeamID]++;
+	}
+
+	UTextBlock* Texts[2] = { Text_Team0Alive, Text_Team1Alive };
+	const FLinearColor Colors[2] = { ArcaneUITheme::TeamBlue, ArcaneUITheme::TeamRed };
+	for (int32 Team = 0; Team < 2; Team++)
+	{
+		if (Texts[Team] == nullptr || CachedTeamAlive[Team] == Alive[Team])
+		{
+			continue;
+		}
+
+		CachedTeamAlive[Team] = Alive[Team];
+		Texts[Team]->SetText(FText::FromString(FString::Printf(TEXT("存活 %d"), Alive[Team])));
+		ArcaneUIStyle::ApplyText(Texts[Team], ArcaneUITheme::FontBody, Colors[Team]);
+		Texts[Team]->SetJustification(ETextJustify::Center);
 	}
 }
 
@@ -294,6 +399,15 @@ void UArcaneCombatHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDel
 	{
 		TryBindLocalASC();
 	}
+
+	// 同理兜底 PC 晚于 HUD 构造的罕见时序
+	if (!BoundSpectatePC.IsValid())
+	{
+		TryBindSpectateDelegate();
+	}
+
+	// 存活数没有专门的复制通知（bIsDead 只复制、不广播），现算是这里唯一的刷新口
+	RefreshAliveCounts();
 
 	if (EnergyBar)
 	{

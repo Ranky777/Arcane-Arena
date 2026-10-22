@@ -61,6 +61,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arcane|Session")
 	void DestroyArcaneSession();
 	
+	// 房主侧唯一入口：把房间的对外容量/人数对齐到真实状态（幂等，非主机调用为 no-op）
+	// 容量真相在 GameMode（NumTeams × MaxPlayersPerTeam），会话只是它的对外投影
+	UFUNCTION(BlueprintCallable, Category = "Arcane|Session")
+	void SyncArcaneSessionRoster(int32 TotalCapacity, int32 NumRealPlayers);
+	
 	UFUNCTION(BlueprintCallable, Category = "Arcane|Session")
 	void ReturnToLobby(const FString& MenuMapName = TEXT("Lvl_MainMenu"));
 	

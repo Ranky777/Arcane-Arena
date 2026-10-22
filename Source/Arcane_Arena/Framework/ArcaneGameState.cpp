@@ -21,6 +21,9 @@ void AArcaneGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	DOREPLIFETIME(AArcaneGameState, MatchWinnerTeamID);
 	DOREPLIFETIME(AArcaneGameState, RosterVersion);
 	DOREPLIFETIME(AArcaneGameState, MaxPlayersPerTeam);
+	DOREPLIFETIME(AArcaneGameState, MaxPlayersPerTeamHardCap);
+	DOREPLIFETIME(AArcaneGameState, RoundsToWin);
+	DOREPLIFETIME(AArcaneGameState, RoundsToWinMax);
 }
 
 void AArcaneGameState::OnRep_Phase()
@@ -47,6 +50,19 @@ void AArcaneGameState::OnRep_WinnerTeam()
 
 void AArcaneGameState::OnRep_RosterVersion()
 {
+	OnRosterChanged.Broadcast();
+}
+
+void AArcaneGameState::OnRep_TeamCapacity()
+{
+	// 上限变了但名单可能没变（房主只是把 3 改成 4），所以这里自己广播一次，
+	// 不依赖 RosterVersion 到达顺序。刷新函数是纯读取，多广播一次没有副作用。
+	OnRosterChanged.Broadcast();
+}
+
+void AArcaneGameState::OnRep_MatchRules()
+{
+	// 同上：赛制变化不涉及名单，必须自己驱动一次面板刷新
 	OnRosterChanged.Broadcast();
 }
 

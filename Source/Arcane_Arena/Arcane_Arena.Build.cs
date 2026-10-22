@@ -15,7 +15,7 @@ public class Arcane_Arena : ModuleRules
 			"Core", "CoreUObject", "Engine", "InputCore", "AIModule", 
 			"EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks", 
 			"Niagara", "OnlineSubsystem", "OnlineSubsystemUtils", "UMG",
-			"StateTreeModule", "GameplayStateTreeModule",
+			"StateTreeModule", "GameplayStateTreeModule", "TargetingSystem",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

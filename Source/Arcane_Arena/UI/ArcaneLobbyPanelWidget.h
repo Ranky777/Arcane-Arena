@@ -12,9 +12,12 @@ class UPanelWidget;
 class UTextBlock;
 
 /**
- * 选阵营面板：人数实时统计、房主权限显隐、换队/开始 RPC 全部在 C++。
+ * 选阵营面板：人数实时统计、房主权限显隐、换队/开始/加删 AI/房间规模 RPC 全部在 C++。
  * 控件树（WBP_LobbyPanel）：Button_Team0 / Button_Team1 / Button_StartMatch /
  * Text_Hint / Text_Count0 / Text_Count1（原 TextBlock_693 / TextBlock_762，迁移时改名）
+ * 房主专用：Button_AddBot0/1、Button_RemoveBot0/1、Button_BalanceBots、
+ * Box_Capacity（Button_CapMinus / Text_Capacity / Button_CapPlus）、
+ * Box_Rounds（Button_RoundsMinus / Text_Rounds / Button_RoundsPlus）
  */
 UCLASS()
 class ARCANE_ARENA_API UArcaneLobbyPanelWidget : public UUserWidget
@@ -57,6 +60,32 @@ protected:
 	
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_BalanceBots;
+	
+	// —— 房间规模（每队人数上限）：整行只在房主端可见 ——
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> Box_Capacity;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_CapMinus;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_CapPlus;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Capacity;
+	
+	// —— 赛制（先赢几局取胜）：同样整行只在房主端可见 ——
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> Box_Rounds;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_RoundsMinus;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_RoundsPlus;
+	
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Rounds;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Title;
@@ -99,4 +128,16 @@ private:
 	
 	UFUNCTION()
 	void HandleBalanceClicked();
+	
+	UFUNCTION()
+	void HandleCapMinusClicked();
+	
+	UFUNCTION()
+	void HandleCapPlusClicked();
+	
+	UFUNCTION()
+	void HandleRoundsMinusClicked();
+	
+	UFUNCTION()
+	void HandleRoundsPlusClicked();
 };

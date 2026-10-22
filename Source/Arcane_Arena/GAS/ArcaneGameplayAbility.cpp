@@ -4,6 +4,8 @@
 #include "ArcaneGameplayAbility.h"
 #include "GameplayEffect.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "Arcane_Arena.h"
 #include "Combat/ArcaneCombatData.h"
 #include "Combat/ArcaneCombatDataLibrary.h"
 
@@ -110,4 +112,66 @@ void UArcaneGameplayAbility::ApplyCost(const FGameplayAbilitySpecHandle Handle,
 		FGameplayTag::RequestGameplayTag(FName("Data.Cost")), -Row.EnergyCost);
 	
 	ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, SpecHandle);
+}
+
+bool UArcaneGameplayAbility::CheckCost(const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags) const
+{
+	UGameplayEffect* CostGE = GetCostGameplayEffect();
+	if (CostGE == nullptr)
+	{
+		return true;
+	}
+	
+	UAbilitySystemComponent* ASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	if (ASC == nullptr)
+	{
+		return false;
+	}
+	
+	bool bFound = false;
+	const FArcaneAbilityRow Row = UArcaneCombatDataLibrary::GetAbilityRow(AbilityID, bFound);
+	if (!bFound)
+	{
+		ensureAlwaysMsgf(false, TEXT("[CheckCost] AbilityID '%s' 在 AbilityTable 无对应行，拒绝激活"), *AbilityID.ToString());
+		return false;
+	}
+	
+	// 根因：引擎 CheckCost 只会拿 CostGE 的 CDO 新建 Spec，不会带 SetByCaller。
+	// Data.Cost 未设置时 GetMagnitude 会报错并按 0 处理，于是耗能检查恒通过。
+	// 这里注入与 ApplyCost 完全相同的一份数值，再按引擎语义检查。
+	FGameplayEffectSpec CostSpec(CostGE, MakeEffectContext(Handle, ActorInfo), GetAbilityLevel(Handle, ActorInfo));
+	CostSpec.SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Cost")), -Row.EnergyCost);
+	CostSpec.CalculateModifierMagnitudes();
+	
+	// 与 FActiveGameplayEffectsContainer::CanApplyAttributeModifiers 同语义：
+	// 只检查 Additive（AddBase 的兼容枚举值 = 0），Current + Delta < 0 即付不起。
+	for (int32 Index = 0; Index < CostGE->Modifiers.Num() && Index < CostSpec.Modifiers.Num(); Index++)
+	{
+		const FGameplayModifierInfo& ModDef = CostGE->Modifiers[Index];
+		if (ModDef.ModifierOp != EGameplayModOp::AddBase || ModDef.Attribute.IsValid() == false)
+		{
+			continue;
+		}
+		
+		const float Current = ASC->GetNumericAttribute(ModDef.Attribute);
+		const float Delta = CostSpec.Modifiers[Index].GetEvaluatedMagnitude();
+		if (Current + Delta < 0.0f)
+		{
+			if (OptionalRelevantTags)
+			{
+				const FGameplayTag& FailCostTag = UAbilitySystemGlobals::Get().ActivateFailCostTag;
+				if (FailCostTag.IsValid())
+				{
+					OptionalRelevantTags->AddTag(FailCostTag);
+				}
+			}
+			
+			UE_LOG(LogArcane, Verbose, TEXT("[CheckCost] %s：%s 能量不足（当前 %.1f，需要 %.1f）"),
+				*GetNameSafe(ActorInfo->OwnerActor.Get()), *AbilityID.ToString(), Current, -Delta);
+			return false;
+		}
+	}
+	
+	return true;
 }

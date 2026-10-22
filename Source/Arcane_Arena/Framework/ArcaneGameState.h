@@ -68,8 +68,24 @@ public:
 	
 	// 每队人数上限的复制镜像：权威值在 GameMode（不复制，客户端根本不存在），
 	// 服务端开局推进这里，UI 才能做"加 AI"按钮的禁用预判。
-	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arcane|Match")
+	// 走 OnRep 自己广播一次 OnRosterChanged：房主改上限时名单可能一个人都没变（RosterVersion 不动），
+	// 而复制属性之间没有到达顺序保证，UI 刷新必须由"上限变了"这件事自己驱动。
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_TeamCapacity, Category = "Arcane|Match")
 	int32 MaxPlayersPerTeam = 3;
+	
+	// 房主可调到的硬上限镜像：UI 靠它决定"+"号是否置灰（否则房主按到上限没有任何反馈）。
+	// 权威值同样在 GameMode。
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_TeamCapacity, Category = "Arcane|Match")
+	int32 MaxPlayersPerTeamHardCap = 7;
+	
+	// 先赢几局取胜（赛制）的复制镜像 + 可调天花板。权威值在 GameMode。
+	// 同一个 OnRep 广播 OnRosterChanged：大厅面板靠它刷新数字，比赛中的回合标签
+	// 则在下次 OnRoundNumberChanged（开局/换回合）时自然读到新值。
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MatchRules, Category = "Arcane|Match")
+	int32 RoundsToWin = 2;
+	
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MatchRules, Category = "Arcane|Match")
+	int32 RoundsToWinMax = 7;
 
 	// —— 蓝图侧阶段判断辅助 ——
 	// 为什么不直接让蓝图比枚举：MatchPhase 是 uint8 枚举蓝图属性，
@@ -99,4 +115,10 @@ protected:
 	
 	UFUNCTION()
 	void OnRep_RosterVersion();
+	
+	UFUNCTION()
+	void OnRep_TeamCapacity();
+	
+	UFUNCTION()
+	void OnRep_MatchRules();
 };

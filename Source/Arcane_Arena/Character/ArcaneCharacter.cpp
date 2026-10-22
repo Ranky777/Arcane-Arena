@@ -3,22 +3,34 @@
 
 #include "ArcaneCharacter.h"
 
+#include "Arcane_Arena.h"
 #include "Camera/CameraComponent.h"
 #include "Components.h"
+#include "Combat/ArcaneCombatData.h"
+#include "Combat/ArcaneCombatDataLibrary.h"
+#include "Combat/ArcaneCombatFunctionLibrary.h"
+#include "Combat/ArcaneProjectile.h"
 #include "Components/WidgetComponent.h"
 #include "Core/ArcaneAbilityTypes.h"
 #include "Framework/ArcaneGameInstance.h"
 #include "Framework/ArcaneGameMode.h"
 #include "Framework/ArcaneGameState.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneGameplayAbility.h"
 #include "GAS/ArcaneAttributeSet.h"
 #include "Net/UnrealNetwork.h"
+#include "Player/ArcanePlayerController.h"
 #include "Player/ArcanePlayerState.h"
 #include "UI/ArcaneOwnerWidget.h"
 #include "UI/ArcaneUserWidget.h"
 
+// arcane.Homing.DrawRange 1 → 每次发射画出施法射程（黄圈，以出膛点为心）与空技能的实际落点（青球，已钳进射程）。
+// 两圈不同心是故意的：黄圈=服务器承认的射程，青球=客户端瞄准点钳制后的落点，画在一起才好判断“范围到底生效在哪一层”
+static TAutoConsoleVariable<bool> CVarDrawHomingRange(
+	TEXT("arcane.Homing.DrawRange"), false,
+	TEXT("绘制远程锁定技的施法射程与空技能落点"), ECVF_Default);
 
 // Sets default values
 AArcaneCharacter::AArcaneCharacter()
@@ -131,19 +143,6 @@ void AArcaneCharacter::InitHealthBar()
 	}
 }
 
-void AArcaneCharacter::BeginPrimaryAttack_Implementation(FName AbilityID)
-{
-}
-
-void AArcaneCharacter::BeginSecondaryAttack_Implementation(FName AbilityID)
-{
-}
-
-void AArcaneCharacter::FinishSecondaryAttack_Implementation()
-{
-}
-
-
 void AArcaneCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -231,8 +230,22 @@ void AArcaneCharacter::HandleDeath()
 void AArcaneCharacter::ApplyDeathPresentation_Implementation()
 {
 	GetCharacterMovement()->DisableMovement();
+	
+	// 本地玩家：进入观战而不是关死输入 —— 观战需要 E/Q/滚轮切人，输入必须留着。
+	// 移动/跳跃已由 bIsDead(ShouldFreezeForMatch) 拦住，视角旋转这里单独锁，
+	// 技能输入由 AArcanePlayerController::OnAbilityInput* 的 bIsSpectating 守卫拦。
+	// 远程机器上的这份表现（OnRep 触发）只需尸体静止即可，不必跑观战。
+	if (AArcanePlayerController* LocalPC = Cast<AArcanePlayerController>(GetController()))
+	{
+		if (LocalPC->IsLocalPlayerController())
+		{
+			LocalPC->EnterSpectatorMode();
+			
+			return;
+		}
+	}
+	
 	DisableInput(Cast<APlayerController>(GetController()));
-	// [PLACEHOLDER] 阶段 6：接观战镜头与重生流程
 }
 
 void AArcaneCharacter::PossessedBy(AController* NewController)
@@ -302,6 +315,133 @@ void AArcaneCharacter::GrantDefaultAbilities()
 			ASC->GiveAbility(Spec);
 		}
 	}
+}
+
+void AArcaneCharacter::BeginPrimaryAttack_Implementation(FName AbilityID)
+{
+}
+
+void AArcaneCharacter::BeginSecondaryAttack_Implementation(FName AbilityID)
+{
+}
+
+void AArcaneCharacter::FinishSecondaryAttack_Implementation()
+{
+}
+
+void AArcaneCharacter::BeginHomingAttack_Implementation(FName AbilityID, AActor* ProposedTarget, FVector AimPoint)
+{
+	const bool bPlayerControlled = GetController() != nullptr && GetController()->IsA(APlayerController::StaticClass());
+	
+	if (!HasAuthority())
+	{
+		// 纯客户端：本地预测激活里算好的选敌结果只是本侧信息，上报给服务器裁决。
+		// （Bot 的 Pawn 在客户端是 SimulatedProxy，但技能只在服务器激活，走不到这里）
+		if (bPlayerControlled)
+		{
+			ServerRequestHomingAttack(AbilityID, ProposedTarget, AimPoint);
+		}
+		
+		return;
+	}
+	
+	// 远程玩家的 GA 也会在服务器再跑一次（GAS 的复制激活），那边 IsLocallyControlled()==false。
+	// 这条分支必须什么都不做，否则一次输入两发弹——发射已经在它的 RPC 里做过了。
+	if (bPlayerControlled && !IsLocallyControlled())
+	{
+		return;
+	}
+	
+	// 剩下两种情况都是"本侧即控制方"：主机的本地激活、以及 Bot 的服务器激活。
+	// 两者的 ProposedTarget 都由本侧选敌管线算出，走同一个发射口。
+	LaunchHomingAttack(AbilityID, ProposedTarget, AimPoint);
+}
+
+void AArcaneCharacter::LaunchHomingAttack(FName AbilityID, AActor* ProposedTarget, const FVector& AimPoint)
+{
+	if (!HasAuthority() || bMatchLocked || bIsDead)
+	{
+		return;
+	}
+	
+	bool bFound = false;
+	const FArcaneAbilityRow Row = UArcaneCombatDataLibrary::GetAbilityRow(AbilityID, bFound);
+	if (!bFound || Row.TargetingMode != EArcaneTargetingMode::Projectile || Row.ProjectileClass == nullptr)
+	{
+		ensureAlwaysMsgf(false, TEXT("[HomingAttack] AbilityID '%s' 不是合法 Projectile 行（缺行/模式错/未配弹体类）"),
+			*AbilityID.ToString());
+		return;
+	}
+	
+	const FVector Muzzle = GetActorLocation() + GetActorForwardVector() * ProjectileSpawnForward + FVector(0.0f, 0.0f, ProjectileSpawnHeight);
+	
+	// 本侧的建议 → 服务器重算（敌我/存活/距离/视线）；不合格则退化为射程内最近合法敌人；
+	// 一个都没有 → nullptr，下面按"直线弹"处理，不浪费这次技能
+	AActor* Target = UArcaneCombatFunctionLibrary::ResolveLockTarget(this, Muzzle, Row.Range, ProposedTarget);
+	
+	FVector Direction = FVector::ZeroVector;
+	float TravelDistance = Row.Range;
+	FVector ClampedAimPoint = AimPoint;
+	
+	if (Target != nullptr)
+	{
+		const FVector AimAt = Target->GetActorLocation() + FVector(0.0f, 0.0f, ProjectileSpawnHeight);
+		Direction = (AimAt - Muzzle).GetSafeNormal();
+	}
+	else
+	{
+		// AimPoint 是世界坐标，可能是 (0,0,0)（竞技场中心），不能拿零向量判断“没瞄准”。
+		// 光标可以指到屏幕外，真正的落点必须钳进施法射程：
+		// 方向、飞行距离、调试球全部以这一个点为准，避免弹体“看起来飞出了射程”。
+		ClampedAimPoint = Muzzle + (AimPoint - Muzzle).GetClampedToMaxSize(Row.Range);
+		
+		const FVector ToAim = ClampedAimPoint - Muzzle;
+		Direction = ToAim.GetSafeNormal();
+		// 客户端可以报任意远的位置，所以距离一律钳进施法射程；
+		// 下限 100 是防"指到自己脚下"时弹一出生就自毁、看着像技能坏了
+		TravelDistance = FMath::Clamp(ToAim.Size(), 100.0f, Row.Range);
+	}
+	
+	if (Direction.IsNearlyZero())
+	{
+		return;
+	}
+	
+	const FTransform SpawnTransform(Direction.Rotation(), Muzzle);
+	AArcaneProjectile* Projectile = GetWorld()->SpawnActorDeferred<AArcaneProjectile>(
+		Row.ProjectileClass, SpawnTransform, this, this, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (Projectile == nullptr)
+	{
+		return;
+	}
+	
+	// Owner/Instigator 决定伤害归属与友军门禁；InitShot 必须夹在 Deferred 与 FinishSpawning 之间，
+	// 因为碰撞半径要在第一次扫掠之前生效
+	Projectile->InitShot(this, Target, AbilityID, Direction, TravelDistance, Row);
+	Projectile->FinishSpawning(SpawnTransform);
+	
+	if (CVarDrawHomingRange.GetValueOnGameThread())
+	{
+		// 黄圈 = 服务器承认的施法范围（以出膛点为心）；青球 = 空技能实际会落下的点（以光标为心）
+		DrawDebugCircle(GetWorld(), Muzzle, Row.Range, 48, FColor::Yellow, false, 5.0f, 0, 2.0f,
+			FVector::RightVector, FVector::ForwardVector);
+		
+		if (Target == nullptr)
+		{
+			DrawDebugSphere(GetWorld(), ClampedAimPoint, 40.0f, 8, FColor::Cyan, false, 5.0f, 0, 2.0f);
+		}
+	}
+	
+	UE_LOG(LogArcane, Log, TEXT("[HomingAttack] %s 发射 %s｜建议=%s｜裁决=%s｜飞行=%.0f/%.0f｜Muzzle=%s｜Aim=%s｜Dir=%s"),
+	*GetName(), *AbilityID.ToString(),
+	*GetNameSafe(ProposedTarget), Target ? *GetNameSafe(Target) : TEXT("无（飞向瞄准点）"),
+	TravelDistance, Row.Range,
+	*Muzzle.ToString(), *AimPoint.ToString(), *Direction.ToString());
+}
+
+void AArcaneCharacter::ServerRequestHomingAttack_Implementation(FName AbilityID, AActor* ProposedTarget, FVector AimPoint)
+{
+	LaunchHomingAttack(AbilityID, ProposedTarget, AimPoint);
 }
 
 void AArcaneCharacter::SetMatchLocked(bool bLocked)
@@ -448,6 +588,20 @@ void AArcaneCharacter::BeginPlay()
 		HealthBarComp->SetWidgetClass(HealthBarWidgetClass);
 		HealthBarComp->InitWidget();
 	}
+	
+	// 机位视向是世界常数（全角色统一）：组件层锁绝对旋转并写死，每台机器、
+	// 人形/Bot 一致。不能指望 BP_CombatCharacter EventTick 里那条 SetWorldRotation：
+	// 它包在 IsLocallyControlled 分支，观战者机器上远程 Pawn 不走这段，
+	// Boom 就退回继承胶囊旋转（胶囊又被 bUseControllerRotationYaw 拽着跟鼠标转）。
+	TInlineComponentArray<USpringArmComponent*> Booms;
+	GetComponents(Booms);
+	for (USpringArmComponent* Boom : Booms)
+	{
+		Boom->bUsePawnControlRotation = false;
+		Boom->SetAbsolute(/*Location*/false, /*Rotation*/true, /*Scale*/false);
+		Boom->SetWorldRotation(FRotator(-65.0f, 0.0f, 0.0f));
+	}
+	
 	
 	// 客户端也按当前阶段上锁，保证首次生成的 Pawn 状态正确
 	ApplyMatchLockFromGameState();

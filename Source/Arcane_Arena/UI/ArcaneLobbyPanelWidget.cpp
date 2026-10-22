@@ -54,6 +54,22 @@ void UArcaneLobbyPanelWidget::NativeConstruct()
 	{
 		Button_BalanceBots->OnClicked.AddDynamic(this, &UArcaneLobbyPanelWidget::HandleBalanceClicked);
 	}
+	if (Button_CapMinus)
+	{
+		Button_CapMinus->OnClicked.AddDynamic(this, &UArcaneLobbyPanelWidget::HandleCapMinusClicked);
+	}
+	if (Button_CapPlus)
+	{
+		Button_CapPlus->OnClicked.AddDynamic(this, &UArcaneLobbyPanelWidget::HandleCapPlusClicked);
+	}
+	if (Button_RoundsMinus)
+	{
+		Button_RoundsMinus->OnClicked.AddDynamic(this, &UArcaneLobbyPanelWidget::HandleRoundsMinusClicked);
+	}
+	if (Button_RoundsPlus)
+	{
+		Button_RoundsPlus->OnClicked.AddDynamic(this, &UArcaneLobbyPanelWidget::HandleRoundsPlusClicked);
+	}
 
 	// —— 主题 ——
 	if (Border_Backdrop)
@@ -75,6 +91,19 @@ void UArcaneLobbyPanelWidget::NativeConstruct()
 	ArcaneUIStyle::ApplyButton(Button_AddBot1, ArcaneUITheme::TeamRed, ArcaneUITheme::FontSmall);
 	ArcaneUIStyle::ApplyButton(Button_RemoveBot1, ArcaneUITheme::TeamRed, ArcaneUITheme::FontSmall);
 	ArcaneUIStyle::ApplyButton(Button_BalanceBots, ArcaneUITheme::CardBg, ArcaneUITheme::FontSmall);
+	ArcaneUIStyle::ApplyButton(Button_CapMinus, ArcaneUITheme::CardBg, ArcaneUITheme::FontSmall);
+	ArcaneUIStyle::ApplyButton(Button_CapPlus, ArcaneUITheme::CardBg, ArcaneUITheme::FontSmall);
+	ArcaneUIStyle::ApplyButton(Button_RoundsMinus, ArcaneUITheme::CardBg, ArcaneUITheme::FontSmall);
+	ArcaneUIStyle::ApplyButton(Button_RoundsPlus, ArcaneUITheme::CardBg, ArcaneUITheme::FontSmall);
+	
+	if (Text_Capacity)
+	{
+		ArcaneUIStyle::ApplyText(Text_Capacity, ArcaneUITheme::FontSmall, ArcaneUITheme::TextSecondary);
+	}
+	if (Text_Rounds)
+	{
+		ArcaneUIStyle::ApplyText(Text_Rounds, ArcaneUITheme::FontSmall, ArcaneUITheme::TextSecondary);
+	}
 	
 	if (Text_Title)
 	{
@@ -129,6 +158,22 @@ void UArcaneLobbyPanelWidget::NativeDestruct()
 	if (Button_BalanceBots)
 	{
 		Button_BalanceBots->OnClicked.RemoveDynamic(this, &UArcaneLobbyPanelWidget::HandleBalanceClicked);
+	}
+	if (Button_CapMinus)
+	{
+		Button_CapMinus->OnClicked.RemoveDynamic(this, &UArcaneLobbyPanelWidget::HandleCapMinusClicked);
+	}
+	if (Button_CapPlus)
+	{
+		Button_CapPlus->OnClicked.RemoveDynamic(this, &UArcaneLobbyPanelWidget::HandleCapPlusClicked);
+	}
+	if (Button_RoundsMinus)
+	{
+		Button_RoundsMinus->OnClicked.RemoveDynamic(this, &UArcaneLobbyPanelWidget::HandleRoundsMinusClicked);
+	}
+	if (Button_RoundsPlus)
+	{
+		Button_RoundsPlus->OnClicked.RemoveDynamic(this, &UArcaneLobbyPanelWidget::HandleRoundsPlusClicked);
 	}
 
 	Super::NativeDestruct();
@@ -218,7 +263,8 @@ void UArcaneLobbyPanelWidget::RefreshFromGameState()
 	const bool bHost = (LocalPS != nullptr && LocalPS->IsRoomOwner());
 	const int32 MaxPerTeam = FMath::Max(1, GS->MaxPlayersPerTeam);
 	
-	UButton* HostButtons[] = { Button_AddBot0, Button_RemoveBot0, Button_AddBot1, Button_RemoveBot1, Button_BalanceBots };
+	UButton* HostButtons[] = { Button_AddBot0, Button_RemoveBot0, Button_AddBot1, Button_RemoveBot1, Button_BalanceBots,
+		Button_CapMinus, Button_CapPlus, Button_RoundsMinus, Button_RoundsPlus };
 	
 	for (UButton* Btn : HostButtons)
 	{
@@ -226,6 +272,24 @@ void UArcaneLobbyPanelWidget::RefreshFromGameState()
 		{
 			Btn->SetVisibility(bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		}
+	}
+	
+	// 整行折叠：非房主连"上限/赛制"这些房间规则都不该看到（房主特权信息）
+	if (Box_Capacity)
+	{
+		Box_Capacity->SetVisibility(bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (Text_Capacity)
+	{
+		Text_Capacity->SetText(FText::FromString(FString::Printf(TEXT("每队上限  %d"), MaxPerTeam)));
+	}
+	if (Box_Rounds)
+	{
+		Box_Rounds->SetVisibility(bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (Text_Rounds)
+	{
+		Text_Rounds->SetText(FText::FromString(FString::Printf(TEXT("胜利条件  先赢 %d 局"), FMath::Max(1, GS->RoundsToWin))));
 	}
 	
 	if (bHost)
@@ -251,6 +315,84 @@ void UArcaneLobbyPanelWidget::RefreshFromGameState()
 		{
 			Button_BalanceBots->SetIsEnabled(Count0 > 0 || Count1 > 0);
 		}
+		
+		// 上下限：硬上限由服务端镜像下来，"+"到顶就置灰（服务端还会按出生点数再收窄一层）
+		const int32 HardCap = FMath::Max(1, GS->MaxPlayersPerTeamHardCap);
+		if (Button_CapMinus)
+		{
+			Button_CapMinus->SetIsEnabled(MaxPerTeam > 1);
+		}
+		if (Button_CapPlus)
+		{
+			Button_CapPlus->SetIsEnabled(MaxPerTeam < HardCap);
+		}
+		
+		const int32 Rounds = FMath::Max(1, GS->RoundsToWin);
+		const int32 RoundsCap = FMath::Max(1, GS->RoundsToWinMax);
+		if (Button_RoundsMinus)
+		{
+			Button_RoundsMinus->SetIsEnabled(Rounds > 1);
+		}
+		if (Button_RoundsPlus)
+		{
+			Button_RoundsPlus->SetIsEnabled(Rounds < RoundsCap);
+		}
+	}
+}
+
+void UArcaneLobbyPanelWidget::HandleCapMinusClicked()
+{
+	const AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>();
+	if (GS == nullptr)
+	{
+		return;
+	}
+	
+	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	{
+		PC->ServerRequestSetTeamCapacity(FMath::Max(1, GS->MaxPlayersPerTeam - 1));
+	}
+}
+
+void UArcaneLobbyPanelWidget::HandleCapPlusClicked()
+{
+	const AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>();
+	if (GS == nullptr)
+	{
+		return;
+	}
+	
+	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	{
+		PC->ServerRequestSetTeamCapacity(GS->MaxPlayersPerTeam + 1);
+	}
+}
+
+void UArcaneLobbyPanelWidget::HandleRoundsMinusClicked()
+{
+	const AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>();
+	if (GS == nullptr)
+	{
+		return;
+	}
+	
+	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	{
+		PC->ServerRequestSetRoundsToWin(FMath::Max(1, GS->RoundsToWin - 1));
+	}
+}
+
+void UArcaneLobbyPanelWidget::HandleRoundsPlusClicked()
+{
+	const AArcaneGameState* GS = GetWorld()->GetGameState<AArcaneGameState>();
+	if (GS == nullptr)
+	{
+		return;
+	}
+	
+	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	{
+		PC->ServerRequestSetRoundsToWin(GS->RoundsToWin + 1);
 	}
 }
 

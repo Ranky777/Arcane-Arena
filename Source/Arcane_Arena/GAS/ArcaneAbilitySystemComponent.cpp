@@ -62,6 +62,38 @@ bool UArcaneAbilitySystemComponent::GetCooldownTimes(EArcaneAbilityInputID Input
 	return Remaining > 0.0f;
 }
 
+void UArcaneAbilitySystemComponent::ClearAllCooldowns()
+{
+	// 冷却 Tag 不是 GE_Cooldown 的静态资产 Tag，而是 ApplyCooldown 注入 Spec 的 DynamicGrantedTags。
+	// 因此必须用 OwningTags 查询（RemoveActiveEffectsWithGrantedTags 内部正是如此）；
+	// MakeQuery_MatchAnyEffectTags 只看效果资产 Tag，会一个都删不掉。
+	FGameplayTagContainer AllCooldownTags;
+	
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		const UGameplayAbility* Ability = Spec.GetPrimaryInstance();
+		if (Ability == nullptr)
+		{
+			Ability = Spec.Ability.Get();
+		}
+		
+		if (const UArcaneGameplayAbility* ArcaneAbility = Cast<UArcaneGameplayAbility>(Ability))
+		{
+			if (const FGameplayTagContainer* Tags = ArcaneAbility->GetCooldownTags())
+			{
+				AllCooldownTags.AppendTags(*Tags);
+			}
+		}
+	}
+	
+	if (!AllCooldownTags.IsEmpty())
+	{
+		const int32 Removed = RemoveActiveEffectsWithGrantedTags(AllCooldownTags);
+		UE_LOG(LogArcane, Verbose, TEXT("[GAS] ClearAllCooldowns: 清理 %d 个冷却效果（%s）"),
+			Removed, *AllCooldownTags.ToStringSimple());
+	}
+}
+
 
 // Called when the game starts
 void UArcaneAbilitySystemComponent::BeginPlay()

@@ -48,4 +48,8 @@ public:
 	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo) const override;
+	
+	// 与 ApplyCost 对称：引擎默认 CheckCost 不会注入 SetByCaller，
+	// SetByCaller 型 Cost 必须在这里补上 Data.Cost，否则检查时按 0 处理。
+	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 };

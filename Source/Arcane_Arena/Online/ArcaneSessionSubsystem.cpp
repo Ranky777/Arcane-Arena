@@ -101,6 +101,39 @@ void UArcaneSessionSubsystem::DestroyArcaneSession()
 	}
 }
 
+void UArcaneSessionSubsystem::SyncArcaneSessionRoster(int32 TotalCapacity, int32 NumRealPlayers)
+{
+	IOnlineSessionPtr S = GetSessionInterface();
+	if (!S.IsValid())
+	{
+		return;
+	}
+	
+	FNamedOnlineSession* Session = S->GetNamedSession(CurrentSessionName);
+	// 只有主机那份会话会被 LAN 广播出去，改客机的副本没有任何意义
+	if (Session == nullptr || Session->bHosting == false)
+	{
+		return;
+	}
+	
+	const int32 NewCapacity = FMath::Max(1, TotalCapacity);
+	if (Session->SessionSettings.NumPublicConnections != NewCapacity)
+	{
+		// 必须拷一份再更新：Null 的 UpdateSession 内部是 SessionSettings = Updated，
+		// 直接把活对象自己的成员当入参会走自赋值
+		FOnlineSessionSettings Updated = Session->SessionSettings;
+		Updated.NumPublicConnections = NewCapacity;
+		S->UpdateSession(CurrentSessionName, Updated, true);
+		Session = S->GetNamedSession(CurrentSessionName);
+		if (Session == nullptr)
+		{
+			return;
+		}
+	}
+	
+	Session->NumOpenPublicConnections = FMath::Clamp(NewCapacity - FMath::Max(0, NumRealPlayers), 0, NewCapacity);
+}
+
 void UArcaneSessionSubsystem::ReturnToLobby(const FString& MenuMapName)
 {
 	DestroyArcaneSession();
@@ -236,3 +269,4 @@ UWorld* UArcaneSessionSubsystem::GetSafeWorld() const
 	
 	return nullptr;
 }
+

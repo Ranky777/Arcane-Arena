@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerStart.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneAttributeSet.h"
+#include "Online/ArcaneSessionSubsystem.h"
 #include "Player/ArcaneHUD.h"
 #include "Player/ArcanePlayerController.h"
 #include "Player/ArcanePlayerState.h"
@@ -39,6 +40,17 @@ void AArcaneGameMode::PostLogin(APlayerController* NewPlayer)
 	{
 		PS->TeamID = PickTeamForNewPlayer();
 		
+		if (PS->TeamID == INDEX_NONE)
+		{
+			// 必须在这里顶位：下面 Super::PostLogin → RestartPlayer → ChoosePlayerStart
+			// 会按 TeamID 选出生点，位置得先腾出来。
+			// 也只有"真的没位置"才减 Bot，房主不会看到真人没来几个就掉 Bot。
+			PS->TeamID = EvictBotForRealPlayer();
+			if (GetGameState<AArcaneGameState>())
+			{
+				GetGameState<AArcaneGameState>()->NotifyRosterChanged();
+			}
+		}
 		// 房主 = Listen Server 的本地玩家。
 		// 判定放在服务端：服务端上只有房主自己的 PC 满足 IsLocalController()，
 		// 远端客户端的 PC 在服务端视角下不是本地的。PIE 双开时天然只命中一个。
@@ -65,6 +77,62 @@ void AArcaneGameMode::PostLogin(APlayerController* NewPlayer)
 	{
 		GS->NotifyRosterChanged();
 	}
+	
+	RefreshSessionRoster();
+}
+
+void AArcaneGameMode::Logout(AController* Exiting)
+{
+	Super::Logout(Exiting);
+	
+	// 引擎顺序：AController::Destroyed → GameMode::Logout → 之后才 CleanupPlayerState，
+	// 所以此刻退场玩家的 PlayerState 仍在 PlayerArray 里，必须显式排除
+	RefreshSessionRoster(Exiting ? Exiting->PlayerState : nullptr);
+}
+
+void AArcaneGameMode::RefreshSessionRoster(APlayerState* Exclude)
+{
+	if (GetNetMode() == NM_Client)
+	{
+		return;
+	}
+	
+	UGameInstance* GI = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	UArcaneSessionSubsystem* Sub = GI ? GI->GetSubsystem<UArcaneSessionSubsystem>() : nullptr;
+	if (Sub == nullptr)
+	{
+		return;
+	}
+	
+	const int32 Capacity = FMath::Max(1, NumTeams) * FMath::Max(1, MaxPlayersPerTeam);
+	Sub->SyncArcaneSessionRoster(Capacity, CountConnectedRealPlayers(Exclude));
+}
+
+int32 AArcaneGameMode::CountConnectedRealPlayers(APlayerState* Exclude) const
+{
+	const AArcaneGameState* GS = GetGameState<AArcaneGameState>();
+	if (GS == nullptr)
+	{
+		return 0;
+	}
+	
+	int32 Count = 0;
+	for (APlayerState* PS : GS->PlayerArray)
+	{
+		if (PS == nullptr || PS == Exclude || PS->IsInactive())
+		{
+			continue;
+		}
+		
+		const AArcanePlayerState* ArcPS = Cast<AArcanePlayerState>(PS);
+		// Bot 由服务器生成，不占网络连接槽，不计入
+		if (ArcPS && ArcPS->IsBot() == false)
+		{
+			Count++;
+		}
+	}
+	
+	return Count;
 }
 
 int32 AArcaneGameMode::PickTeamForNewPlayer() const
@@ -88,16 +156,84 @@ int32 AArcaneGameMode::PickTeamForNewPlayer() const
 		}
 	}
 
-	int32 BestTeam = 0;
-	for (int32 Team = 1; Team < TeamCount; ++Team)
+	int32 BestTeam = INDEX_NONE;
+	for (int32 Team = 0; Team < TeamCount; ++Team)
 	{
-		if (TeamSizes[Team] < TeamSizes[BestTeam])
+		if (TeamSizes[Team] >= FMath::Max(1, MaxPlayersPerTeam))
+		{
+			continue; // 满员的队不参与，由调用方决定顶 Bot
+		}
+		if (BestTeam == INDEX_NONE || TeamSizes[Team] < TeamSizes[BestTeam])
 		{
 			BestTeam = Team;
 		}
 	}
 
 	return BestTeam;
+}
+
+int32 AArcaneGameMode::EvictBotForRealPlayer()
+{
+	const int32 TeamCount = FMath::Max(1, NumTeams);
+	
+	int32 BestTeam = INDEX_NONE;
+	int32 BestBots = 0;
+	
+	for (int32 Team = 0; Team < TeamCount; Team++)
+	{
+		const int32 Bots = CountTeamBots(Team);
+		if (Bots > BestBots)
+		{
+			BestBots = Bots;
+			BestTeam = Team;
+		}
+	}
+	
+	if (BestTeam != INDEX_NONE && RemoveOneBotFromTeam(BestTeam))
+	{
+		UE_LOG(LogArcane, Log, TEXT("EvictBotForRealPlayer: 真人进场，顶掉 Team%d 的 1 个 Bot 让位"), BestTeam);
+		return BestTeam;
+	}
+	
+	// 没有 Bot 可顶 = 两队真人均已达上限。这种房间对外空位已经是 0、列表里搜不到，
+	// 走到这里只剩"刷新后瞬间被占满"的竞态，兜底进人最少的队并告警，不为此造新机制。
+	int32 Smallest = 0;
+	for (int32 Team = 1; Team < TeamCount; Team++)
+	{
+		if (CountTeamMembers(Team) < CountTeamMembers(Smallest))
+		{
+			Smallest = Team;
+		}
+	}
+ 
+	UE_LOG(LogArcane, Warning, TEXT("EvictBotForRealPlayer: 无 Bot 可顶，真人临时超编进 Team%d"), Smallest);
+	return Smallest;
+}
+
+bool AArcaneGameMode::RemoveOneBotFromTeam(int32 TeamID)
+{
+	if (GameState == nullptr)
+	{
+		return false;
+	}
+	
+	for (int32 i = GameState->PlayerArray.Num() - 1; i >= 0; i--)
+	{
+		const AArcanePlayerState* ArcPS = Cast<AArcanePlayerState>(GameState->PlayerArray[i]);
+		if (ArcPS != nullptr && ArcPS->bIsBot && ArcPS->TeamID == TeamID)
+		{
+			if (AArcaneAIController* Bot = Cast<AArcaneAIController>(ArcPS->GetOwner()))
+			{
+				// 同步销毁：UnPossess → Pawn->Destroy → CleanupPlayerState → Destroy
+				// 返回后 PlayerArray 和出生点都已经腾空，本次 PostLogin 就能直接用上
+				Bot->DestroyBotCompletely();
+				
+				return true;
+			}
+		}
+	}
+	
+	return false;
 }
 
 bool AArcaneGameMode::IsStartSpotOccupied(APawn* PawnToFit, const FVector& Location, const FRotator& Rotation) const
@@ -127,9 +263,17 @@ bool AArcaneGameMode::IsStartSpotOccupied(APawn* PawnToFit, const FVector& Locat
 	for (TActorIterator<APawn> It(World); It; ++It)
 	{
 		const APawn* Other = *It;
-		if (!IsValid(Other))
+		if (!IsValid(Other) || Other->IsPendingKillPending())
 		{
 			continue;
+		}
+		
+		if (const AArcaneCharacter* ArcaneOther = Cast<AArcaneCharacter>(Other))
+		{
+			if (ArcaneOther->bIsDead)
+			{
+				continue;   // 尸体：模板要 Delay(DeathRemovalTime) 才移除，不该挡住出生点
+			}
 		}
 
 		const FVector Delta = Other->GetActorLocation() - Location;
@@ -153,10 +297,11 @@ AActor* AArcaneGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	UClass* PawnClass = GetDefaultPawnClassForController(Player);
 	APawn* PawnToFit = PawnClass ? PawnClass->GetDefaultObject<APawn>() : nullptr;
 
-	TArray<APlayerStart*> Prefered; // 本队的空位
-	TArray<APlayerStart*> Occupied;    // 被占（几何/距离判定），兜底
-	TArray<APlayerStart*> WrongTeam;   // 空的但不是本队，第二兜底
-
+	TArray<APlayerStart*> Prefered;      // 本队 且 空
+	TArray<APlayerStart*> OwnTeamTaken;  // 本队 但 被占（宁可叠在一起，也不送对面）
+	TArray<APlayerStart*> WrongTeam;     // 他队 且 空
+	TArray<APlayerStart*> Occupied;      // 他队 且 被占（最后兜底）
+	
 	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
 	{
 		APlayerStart* Start = *It;
@@ -166,14 +311,21 @@ AActor* AArcaneGameMode::ChoosePlayerStart_Implementation(AController* Player)
 			continue; // PIE "Play From Here" 专用点，别动（双 PIE 下防误选）
 		}
 		
+		// 没标阵营的点不参与选点：它不属于任何队伍，选中它等于随机传送
+		if (Start->PlayerStartTag.IsNone())
+		{
+			continue;
+		}
+		
+		const bool bOwnTeam = (Start->PlayerStartTag == WantedTag);
 		const FVector Location = Start->GetActorLocation();
 		const FRotator Rotation = Start->GetActorRotation();
 		
 		if (IsStartSpotOccupied(PawnToFit, Location, Rotation))
 		{
-			Occupied.Add(Start);
+			(bOwnTeam ? OwnTeamTaken : Occupied).Add(Start);
 		}
-		else if (Start->PlayerStartTag == WantedTag)
+		else if (bOwnTeam)
 		{
 			Prefered.Add(Start);
 		}
@@ -192,6 +344,10 @@ AActor* AArcaneGameMode::ChoosePlayerStart_Implementation(AController* Player)
 	if (Prefered.Num() > 0)
 	{
 		Chosen = PickRandom(Prefered);
+	}
+	else if (OwnTeamTaken.Num()>0)
+	{
+		Chosen = PickRandom(OwnTeamTaken);
 	}
 	else if (WrongTeam.Num() > 0)
 	{
@@ -382,22 +538,14 @@ bool AArcaneGameMode::RequestRemoveLastBot(AArcanePlayerState* Requester, int32 
 		return false;
 	}
 	
-	for (int32 i = GameState->PlayerArray.Num() - 1; i >= 0; i--)
+	if (RemoveOneBotFromTeam(TeamID) == false)
 	{
-		const AArcanePlayerState* ArcPS = Cast<AArcanePlayerState>(GameState->PlayerArray[i]);
-		if (ArcPS != nullptr && ArcPS->bIsBot && ArcPS->TeamID == TeamID)
-		{
-			if (AArcaneAIController* Bot = Cast<AArcaneAIController>(ArcPS->GetOwner()))
-			{
-				Bot->DestroyBotCompletely();
-				GS->NotifyRosterChanged();
-				
-				return true;
-			}
-		}
+		return false;
 	}
 	
-	return false;
+	GS->NotifyRosterChanged();
+	
+	return true;
 }
 
 bool AArcaneGameMode::RequestBalanceBots(AArcanePlayerState* Requester)
@@ -445,6 +593,144 @@ bool AArcaneGameMode::RequestBalanceBots(AArcanePlayerState* Requester)
 	// UE_LOG(LogArcane, Warning, TEXT("RequestBalanceBots: 房主 %s 配平至每队 %d 人（本次%s）"),
 	// 	*Requester->GetPlayerName(), Target, bSpawnedAny ? TEXT("有新增") : TEXT("无新增"));
 	return bSpawnedAny;
+}
+
+int32 AArcaneGameMode::CountTeamStarts(int32 TeamID) const
+{
+	const FName WantedTag = FName(*FString::Printf(TEXT("Team%d"), TeamID));
+	
+	int32 Count = 0;
+	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
+	{
+		const APlayerStart* Start = *It;
+		if (IsValid(Start) == false || Cast<APlayerStartPIE>(Start) != nullptr)
+		{
+			continue;
+		}
+		
+		if (Start->PlayerStartTag == WantedTag)
+		{
+			Count++;
+		}
+	}
+	
+	return Count;
+}
+
+int32 AArcaneGameMode::ComputeTeamCapacityCeiling() const
+{
+	// 收窄一层：任何一队可用出生点数不够，就不允许把上限抬到那个数以上，
+	// 否则 ChoosePlayerStart 的"他队空位"兜底会把人送到对面（阵营正确性 > 不叠人）。
+	const int32 TeamCount = FMath::Max(1, NumTeams);
+	int32 Ceiling = FMath::Max(1, MaxPlayersPerTeamHardCap);
+	
+	for (int32 Team = 0; Team < TeamCount; Team++)
+	{
+		const int32 Starts = CountTeamStarts(Team);
+		if (Starts > 0)
+		{
+			Ceiling = FMath::Min(Ceiling, Starts);
+		}
+	}
+	
+	return Ceiling;
+}
+
+bool AArcaneGameMode::RequestSetTeamCapacity(AArcanePlayerState* Requester, int32 NewCapacity)
+{
+	AArcaneGameState* GS = GetGameState<AArcaneGameState>();
+	if (GS == nullptr || GS->MatchPhase != EArcaneMatchPhase::Warmup)
+	{
+		return false; // 只有选阵营阶段能改房间规模
+	}
+	if (Requester == nullptr || Requester->bIsRoomOwner == false)
+	{
+		return false; // 只有房主能改
+	}
+	
+	const int32 TeamCount = FMath::Max(1, NumTeams);
+	const int32 EffectiveCap = ComputeTeamCapacityCeiling();
+	
+	// 镜像"实际可调上限"，让 UI 的"+"置灰线和服务端接受的边界完全一致：
+	// 房主按到出生点撑不住的那一档，按钮会自己变灰，而不是按了没反应。
+	GS->MaxPlayersPerTeamHardCap = EffectiveCap;
+	
+	const int32 Clamped = FMath::Clamp(NewCapacity, 1, EffectiveCap);
+	if (Clamped == MaxPlayersPerTeam)
+	{
+		if (Clamped != NewCapacity)
+		{
+			UE_LOG(LogArcane, Log, TEXT("SetTeamCapacity: %d 被出生点上限收窄为 %d（可用出生点不足）"),
+				NewCapacity, Clamped);
+		}
+		GS->NotifyRosterChanged(); // 值没变，但要把收窄后的天花板推给 UI
+		RefreshSessionRoster();
+		
+		return false; // 没有变化，不改上限
+	}
+	
+	MaxPlayersPerTeam = Clamped;
+	GS->MaxPlayersPerTeam = Clamped;
+	RefreshSessionRoster();
+	
+	// 降容：超员的部分只请 Bot，真人永远不被自动移出（移出真人需要另一套投票/断线语义）
+	for (int32 Team = 0; Team < TeamCount; Team++)
+	{
+		int32 Trimmed = 0;
+		while (CountTeamMembers(Team) > MaxPlayersPerTeam && CountTeamBots(Team) > 0
+			&& Trimmed < EffectiveCap && RequestRemoveLastBot(Requester, Team))
+		{
+			Trimmed++;
+		}
+		
+		if (CountTeamMembers(Team) > MaxPlayersPerTeam)
+		{
+			UE_LOG(LogArcane, Warning, TEXT("SetTeamCapacity: Team%d 真人 %d 已超新上限 %d（真人不会被自动移出）"),
+				Team, CountTeamMembers(Team) - CountTeamBots(Team), MaxPlayersPerTeam);
+		}
+	}
+	
+	GS->NotifyRosterChanged();
+	UE_LOG(LogArcane, Log, TEXT("SetTeamCapacity: 房主 %s 把每队上限设为 %d（硬上限 %d / 出生点收窄后 %d）"),
+		*Requester->GetPlayerName(), MaxPlayersPerTeam, MaxPlayersPerTeamHardCap, EffectiveCap);
+	
+	return true;
+}
+
+bool AArcaneGameMode::RequestSetRoundsToWin(AArcanePlayerState* Requester, int32 NewRounds)
+{
+	AArcaneGameState* GS = GetGameState<AArcaneGameState>();
+	if (GS == nullptr || GS->MatchPhase != EArcaneMatchPhase::Warmup)
+	{
+		return false; // 只有选阵营阶段能改赛制
+	}
+	if (Requester == nullptr || Requester->bIsRoomOwner == false)
+	{
+		return false; // 只有房主能改
+	}
+	
+	const int32 Clamped = FMath::Clamp(NewRounds, 1, FMath::Max(1, WinningScoreHardCap));
+	if (Clamped == WinningScore)
+	{
+		// 值没变也要把天花板推给客户端：否则房主在"+"上按到顶会以为按钮坏了
+		GS->RoundsToWin = WinningScore;
+		GS->RoundsToWinMax = FMath::Max(1, WinningScoreHardCap);
+		GS->NotifyRosterChanged();
+		return false;
+	}
+	
+	WinningScore = Clamped;
+	GS->RoundsToWin = WinningScore;
+	GS->RoundsToWinMax = FMath::Max(1, WinningScoreHardCap);
+	GS->NotifyRosterChanged();
+	
+	// 只改之后的判定：已经拿到的比分不动（中途改赛制不该抹掉战绩）
+	UE_LOG(LogArcane, Log, TEXT("SetRoundsToWin: 房主 %s 把胜利局数设为先赢 %d 局（可调上限 %d，当前比分 %d:%d）"),
+		*Requester->GetPlayerName(), WinningScore, WinningScoreHardCap,
+		GS->TeamScores.IsValidIndex(0) ? GS->TeamScores[0] : 0,
+		GS->TeamScores.IsValidIndex(1) ? GS->TeamScores[1] : 0);
+	
+	return true;
 }
 
 UClass* AArcaneGameMode::GetDefaultPawnClassForController_Implementation(AController* InController)
@@ -668,15 +954,10 @@ void AArcaneGameMode::RespawnAllPlayers()
 
 				const float MaxEnergy = ASC->GetNumericAttribute(UArcaneAttributeSet::GetMaxEnergyAttribute());
 				ASC->SetNumericAttributeBase(UArcaneAttributeSet::GetEnergyAttribute(), MaxEnergy);
-
-				// 清除全部冷却
-				const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyEffectTags(
-					FGameplayTagContainer(FGameplayTag::RequestGameplayTag(FName("Ability.Cooldown"))));
-
-				for (const FActiveGameplayEffectHandle& Handle : ASC->GetActiveEffects(Query))
-				{
-					ASC->RemoveActiveGameplayEffect(Handle);
-				}
+				
+				// 冷却 Tag 是运行时 DynamicGrantedTags，按 GE 资产 Tag 查不到；
+				// 交给 ASC 用各能力 GetCooldownTags() 的并集来清。
+				ASC->ClearAllCooldowns();
 			}
 		}
 	}
@@ -851,6 +1132,9 @@ void AArcaneGameMode::HandleMatchHasStarted()
 		}
 		
 		GS->MaxPlayersPerTeam = MaxPlayersPerTeam;
+		GS->MaxPlayersPerTeamHardCap = ComputeTeamCapacityCeiling();
+		GS->RoundsToWin = WinningScore;
+		GS->RoundsToWinMax = FMath::Max(1, WinningScoreHardCap);
 		// 关键：连接完成 ≠ 开打。先进 Warmup（选阵营），等房主点开始。
 		GS->MatchPhase = EArcaneMatchPhase::Warmup;
 		GS->RoundNumber = 0;

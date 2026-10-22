@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "ArcaneCombatData.generated.h"
 
+class AArcaneProjectile;
 class UGameplayEffect;
 
 UENUM(BlueprintType)
@@ -72,6 +73,18 @@ struct FArcaneAbilityRow : public FTableRowBase
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FGameplayTagContainer AbilityTags;
+	
+	// —— 仅 TargetingMode == Projectile 使用。近战行留默认值即可，
+	//    但 CSV 必须给这三列的单元格（Docs/09 §4.2：每行单元格数必须等于表头列数）——
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSubclassOf<AArcaneProjectile> ProjectileClass;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float ProjectileSpeed = 1200.0f;
+	
+	// 跟踪转向角速度（度/秒）。0 = 纯直线弹：同一套弹体可直接复用给直线远程技能
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float HomingTurnRate = 720.0f;
 };
 
 USTRUCT(BlueprintType)
