@@ -11,6 +11,7 @@
 #include "GameplayEffect.h"
 #include "GameplayTagContainer.h"
 #include "Character/ArcaneCharacter.h"
+#include "Core/ArcaneTeamUtils.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/ArcanePlayerState.h"
 #include "TargetingSystem/TargetingSubsystem.h"
@@ -115,16 +116,9 @@ void UArcaneCombatFunctionLibrary::ApplyImpact(AActor* SourceActor, AActor* Targ
 			// 3. 受击反应蒙太奇（服务器发起，经角色复制；BP 实现 PlayHitReaction，见蓝图步骤 4）
 			if (bServer && ImpactRow.HitReactionTag.IsValid())
 			{
-				if (UFunction* Fn = TargetActor->FindFunction("PlayHitReaction"))
+				if (IArcaneCombatant* Combatant = Cast<IArcaneCombatant>(TargetActor))
 				{
-					struct FHitReactionParams
-					{
-						FGameplayTag Tag;
-					};
-					
-					FHitReactionParams Param;
-					Param.Tag = ImpactRow.HitReactionTag;
-					TargetActor->ProcessEvent(Fn, &Param);
+					Combatant->PlayCombatHitReaction(ImpactRow.HitReactionTag);
 				}
 			}
 			
@@ -153,25 +147,7 @@ void UArcaneCombatFunctionLibrary::ApplyImpact(AActor* SourceActor, AActor* Targ
 
 int32 UArcaneCombatFunctionLibrary::GetActorTeamID(const AActor* Actor)
 {
-	if (Actor == nullptr)
-	{
-		return -1;
-	}
-	
-	if (const APawn* Pawn = Cast<APawn>(Actor))
-	{
-		if (const AArcanePlayerState* PS = Pawn->GetPlayerState<AArcanePlayerState>())
-		{
-			return PS->TeamID;
-		}
-	}
-	
-	if (const AArcanePlayerState* PS = Cast<AArcanePlayerState>(Actor))
-	{
-		return PS->TeamID; // 直接传了 PlayerState 的情况
-	}
-	
-	return -1;
+	return ArcaneTeam::GetTeamId(Actor);
 }
 
 FVector UArcaneCombatFunctionLibrary::BuildDisplacementImpulse(const FArcaneImpactRow& ImpactRow,
@@ -290,14 +266,14 @@ bool UArcaneCombatFunctionLibrary::TryGetCursorGroundPoint(const APlayerControll
 bool UArcaneCombatFunctionLibrary::IsLockableCharacter(AActor* SourceActor, const FVector& FromLocation,
                                                        AActor* Candidate, float MaxRadius)
 {
-	const AArcaneCharacter* Character = Cast<AArcaneCharacter>(Candidate);
-	if (Character == nullptr || Character == SourceActor || Character->bIsDead)
+	IArcaneCombatant* Combatant = Cast<IArcaneCombatant>(Candidate);
+	if (Combatant == nullptr || Candidate == SourceActor || !Combatant->IsCombatAlive())
 	{
 		return false;
 	}
 	
 	const int32 SourceTeam = GetActorTeamID(SourceActor);
-	const int32 TargetTeam = GetActorTeamID(Character);
+	const int32 TargetTeam = GetActorTeamID(Candidate);
 	// 无阵营（箱子/假人/未分队）与同队都不是锁定对象
 	if (TargetTeam < 0 || (SourceTeam >= 0 && SourceTeam == TargetTeam))
 	{
@@ -305,7 +281,7 @@ bool UArcaneCombatFunctionLibrary::IsLockableCharacter(AActor* SourceActor, cons
 	}
 	
 	// MaxRadius < 0 = 调用方不在这个函数里管距离
-	if (MaxRadius >= 0.0f && FVector::Dist(FromLocation, Character->GetActorLocation()) > MaxRadius)
+	if (MaxRadius >= 0.0f && FVector::Dist(FromLocation, Candidate->GetActorLocation()) > MaxRadius)
 	{
 		return false;
 	}
@@ -313,8 +289,8 @@ bool UArcaneCombatFunctionLibrary::IsLockableCharacter(AActor* SourceActor, cons
 	// 视线：从出膛点到目标胸部，命中目标自己不视为遮挡（把它加进 ignore，"打到它"与"通路"等价）
 	FHitResult Blocker;
 	FCollisionQueryParams Params(FName("ArcaneLockOn"), false, SourceActor);
-	Params.AddIgnoredActor(Character);
-	const FVector ToLocation = Character->GetActorLocation() + FVector(0.0f, 0.0f, ArcaneLockOnAimZ);
+	Params.AddIgnoredActor(Candidate);
+	const FVector ToLocation = Candidate->GetActorLocation() + FVector(0.0f, 0.0f, ArcaneLockOnAimZ);
 	
 	return !SourceActor->GetWorld()->LineTraceSingleByChannel(Blocker, FromLocation, ToLocation, ECC_Visibility, Params);
 }

@@ -3,10 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "ArcaneMatchClient.h"
+#include "ArcaneRangePreviewClient.h"
 #include "GameFramework/PlayerController.h"
 #include "GAS/ArcaneGameplayAbility.h"
 #include "ArcanePlayerController.generated.h"
 
+class UArcaneSpectatorComponent;
 class UArcaneAbilityRangePreviewWidget;
 class AArcaneCharacter;
 class UInputMappingContext;
@@ -30,7 +33,7 @@ struct FArcaneAbilityInputMapping
  * 
  */
 UCLASS()
-class ARCANE_ARENA_API AArcanePlayerController : public APlayerController
+class ARCANE_ARENA_API AArcanePlayerController : public APlayerController, public IArcaneMatchClient, public IArcaneRangePreviewClient
 {
 	GENERATED_BODY()
 	
@@ -92,37 +95,24 @@ public:
 	void LeaveSpectatorMode();
 	
 	UFUNCTION(BlueprintPure, Category = "Arcane|Spectate")
-	bool IsSpectating() const { return bIsSpectating; }
+	bool IsSpectating() const;
 	
-	void ShowAbilityRangePreview(AActor* SourceActor, float CastRange, float ImpactRadius);
-	void HideAbilityRangePreview();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arcane|Spectate")
+	TObjectPtr<UArcaneSpectatorComponent> SpectatorComponent;
+	
+	virtual void ShowAbilityRangePreview(AActor* SourceActor, float CastRange, float ImpactRadius) override;
+	virtual void HideAbilityRangePreview() override;
 	
 	// 目标切换事件，供 HUD 显示"正在观战：xxx"
 	FOnArcaneSpectateTargetChanged OnSpectateTargetChanged;
 	
+	
 private:
-	// 观战内部
-	bool bIsSpectating = false;
-	
-	FTimerHandle SpectateValidateTimer;
-	
-	TWeakObjectPtr<AActor> CurrentSpectateTarget;
-	
-	int32 GetLocalTeamID() const;
-	
-	void BuildLivingTeammates(TArray<AArcaneCharacter*>& OutTeammates) const;
-	
-	void ViewTeammate(AArcaneCharacter* Target);
-	
 	UFUNCTION()
 	void OnSpectateNext();
 	
 	UFUNCTION()
 	void OnSpectatePrev();
-	
-	void CycleSpectateTarget(int32 Direction);
-	
-	void ValidateSpectateTarget();
 	
 	void BindAbilityInputs();
 
@@ -138,9 +128,11 @@ private:
 	void OnAbilityInputReleased(int32 InputID);
 	
 public:
+	virtual void RequestMatchCommand(EArcaneMatchCommand Command, int32 Param = 0) override;
+	
 	// —— 选阵营 / 结算面板的服务器请求 ——
 	// 客户端不能直接改 TeamID / 阶段，一律走 Server RPC，由 GameMode 校验。
-	// 只能从「自己的 PC」发起，所以 UI 里必须 GetOwningPlayer → Cast 到本 PC。
+	// UI 侧通过 IArcaneMatchClient 发命令，不再 Cast 到本类。
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Arcane|Match")
 	void ServerRequestChangeTeam(int32 NewTeamID);
 	

@@ -6,6 +6,8 @@
 #include "Blueprint/UserWidget.h"
 #include "ArcaneLobbyPanelWidget.generated.h"
 
+enum class EArcaneMatchCommand : uint8;
+class IArcaneMatchClient;
 class UBorder;
 class UButton;
 class UPanelWidget;
@@ -140,4 +142,7 @@ private:
 	
 	UFUNCTION()
 	void HandleRoundsPlusClicked();
+	
+	IArcaneMatchClient* GetMatchClient() const;
+	void SendMatchCommand(EArcaneMatchCommand Command, int32 Param = 0);
 };

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "GenericTeamAgentInterface.h"
 #include "GameFramework/PlayerState.h"
 #include "ArcanePlayerState.generated.h"
 
@@ -13,7 +14,7 @@ class UArcaneAbilitySystemComponent;
  * 
  */
 UCLASS()
-class ARCANE_ARENA_API AArcanePlayerState : public APlayerState, public IAbilitySystemInterface
+class ARCANE_ARENA_API AArcanePlayerState : public APlayerState, public IAbilitySystemInterface, public IGenericTeamAgentInterface
 {
 	GENERATED_BODY()
 	
@@ -26,6 +27,11 @@ public:
 	UArcaneAbilitySystemComponent* GetArcaneASC() const { return ArcaneASC; }
 	
 	UArcaneAttributeSet* GetArcaneAttributeSet() const { return AttributeSet; }
+	
+	// IGenericTeamAgentInterface：队伍归属在 PlayerState
+	virtual FGenericTeamId GetGenericTeamId() const override;
+	
+	virtual ETeamAttitude::Type GetTeamAttitudeTowards(const AActor& Other) const override;
 	
 	// 3v3 队伍 ID（0/1），GameMode PostLogin 交替分配。
 	// 默认 -1 = "未知/未分配"哨兵：客户端复制到达前、服务器 PostLogin 写入前

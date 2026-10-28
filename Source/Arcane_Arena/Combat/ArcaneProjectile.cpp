@@ -4,6 +4,7 @@
 #include "ArcaneProjectile.h"
 
 #include "AbilitySystemInterface.h"
+#include "ArcaneCombatant.h"
 #include "ArcaneCombatData.h"
 #include "ArcaneCombatDataLibrary.h"
 #include "ArcaneCombatFunctionLibrary.h"
@@ -121,10 +122,10 @@ void AArcaneProjectile::ApplyHitOnServer(AActor* Target, const FHitResult& Hit)
 	}
 	
 	const FVector Impulse = UArcaneCombatFunctionLibrary::BuildDisplacementImpulse(Impact, FireOrigin, Target->GetActorLocation(), Hit.ImpactNormal);
-	ACharacter* TargetCharacter = Cast<ACharacter>(Target);
-	if ( TargetCharacter != nullptr && !Impulse.IsNearlyZero())
+	IArcaneCombatant* Combatant = Cast<IArcaneCombatant>(Target);
+	if (Combatant != nullptr && !Impulse.IsNearlyZero())
 	{
-		TargetCharacter->LaunchCharacter(Impulse, true, true);
+		Combatant->ApplyCombatKnockback(Impulse);
 	}
 	
 	UArcaneCombatFunctionLibrary::ApplyImpact(Source, Target, StatusEffectClass, Impact, Hit);

@@ -3,12 +3,14 @@
 
 #include "ArcaneCharacter.h"
 
+#include "ArcaneCameraLeadComponent.h"
 #include "Arcane_Arena.h"
 #include "Camera/CameraComponent.h"
 #include "Components.h"
 #include "Combat/ArcaneCombatData.h"
 #include "Combat/ArcaneCombatDataLibrary.h"
 #include "Combat/ArcaneCombatFunctionLibrary.h"
+#include "Combat/ArcaneMeleeCombatComponent.h"
 #include "Combat/ArcaneProjectile.h"
 #include "Components/WidgetComponent.h"
 #include "Core/ArcaneAbilityTypes.h"
@@ -38,6 +40,11 @@ AArcaneCharacter::AArcaneCharacter()
 	bReplicates = true;
 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
+	
+	// 近战结算组件：trace / 伤害 / 冲击 / CameraShake
+	MeleeCombatComponent = CreateDefaultSubobject<UArcaneMeleeCombatComponent>(TEXT("MeleeCombatComponent"));
+	
+	CameraLeadComponent = CreateDefaultSubobject<UArcaneCameraLeadComponent>(TEXT("CameraLeadComponent"));
 
 	// 头顶血条，Screen 空间始终朝相机，俯视下最稳
 	HealthBarComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarComp"));
@@ -62,6 +69,76 @@ UArcaneAbilitySystemComponent* AArcaneCharacter::GetArcaneASC() const
 	}
 
 	return nullptr;
+}
+
+bool AArcaneCharacter::IsCombatAlive() const
+{
+	return !bIsDead;
+}
+
+bool AArcaneCharacter::IsCombatInputLocked() const
+{
+	return bMatchLocked || bIsDead;
+}
+
+void AArcaneCharacter::ApplyCombatKnockback(const FVector& Impulse)
+{
+	if (HasAuthority() && !Impulse.IsNearlyZero())
+	{
+		LaunchCharacter(Impulse, true, true);
+	}
+}
+
+void AArcaneCharacter::PlayCombatHitReaction(const FGameplayTag& ReactionTag)
+{
+	PlayHitReaction(ReactionTag);
+}
+
+void AArcaneCharacter::ExecutePrimaryAttack(FName AbilityID)
+{
+	BeginPrimaryAttack(AbilityID);
+}
+
+void AArcaneCharacter::ExecuteSecondaryAttack(FName AbilityID)
+{
+	BeginSecondaryAttack(AbilityID);
+}
+
+void AArcaneCharacter::ExecuteFinishSecondaryAttack()
+{
+	FinishSecondaryAttack();
+}
+
+void AArcaneCharacter::ExecuteHomingAttack(FName AbilityID, AActor* ProposedTarget, const FVector& AimPoint)
+{
+	BeginHomingAttack(AbilityID, ProposedTarget, AimPoint);
+}
+
+void AArcaneCharacter::ApplyArcaneHit_Implementation(const FArcaneHitPayload& Payload)
+{
+	FHitResult Hit;
+	Hit.bBlockingHit = false;
+	Hit.Location = Payload.HitLocation;
+	Hit.ImpactPoint = Payload.HitLocation;
+	
+	// 与旧蓝图一致：伤害本身内部仍会做服务器权威判断
+	UArcaneCombatFunctionLibrary::ApplyArcaneDamage(
+		Payload.DamageCauser.Get(),
+		this,
+		Payload.DamageEffectClass,
+		Payload.Damage,
+		Hit);
+	
+	// 近战击退刻意只取 X/Y，保持原 EventApplyDamage 的 MakeVector(X,Y)
+	LaunchCharacter(
+		FVector(Payload.Impulse.X, Payload.Impulse.Y, 0.0f),
+		true,
+		true);
+}
+
+UArcaneMeleeCombatComponent* AArcaneCharacter::GetMeleeCombatComponent() const
+{
+	return MeleeCombatComponent;
 }
 
 void AArcaneCharacter::InitAbilitySystem()

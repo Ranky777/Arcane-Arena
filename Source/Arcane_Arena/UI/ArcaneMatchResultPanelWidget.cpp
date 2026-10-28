@@ -121,17 +121,17 @@ void UArcaneMatchResultPanelWidget::RefreshResult()
 
 void UArcaneMatchResultPanelWidget::HandleRematchClicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	if (IArcaneMatchClient* Client = GetMatchClient())
 	{
-		PC->ServerRequestRematch();
+		Client->RequestMatchCommand(EArcaneMatchCommand::Rematch);
 	}
 }
 
 void UArcaneMatchResultPanelWidget::HandleBackToLobbyClicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	if (IArcaneMatchClient* Client = GetMatchClient())
 	{
-		PC->ServerRequestBackToLobby();
+		Client->RequestMatchCommand(EArcaneMatchCommand::BackToLobby);
 	}
 }
 
@@ -146,4 +146,9 @@ void UArcaneMatchResultPanelWidget::HandleLeaveClicked()
 		}
 	}
 	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, false);
+}
+
+IArcaneMatchClient* UArcaneMatchResultPanelWidget::GetMatchClient() const
+{
+	return Cast<IArcaneMatchClient>(GetOwningPlayer());
 }

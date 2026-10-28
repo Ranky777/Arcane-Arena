@@ -6,6 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "ArcaneMatchResultPanelWidget.generated.h"
 
+class IArcaneMatchClient;
 class UBorder;
 class UButton;
 class UPanelWidget;
@@ -65,5 +66,5 @@ private:
 	void HandleLeaveClicked();
 
 private:
-	// (RefreshResult 已提升为 public)
+	IArcaneMatchClient* GetMatchClient() const;
 };

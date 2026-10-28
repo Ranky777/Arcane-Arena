@@ -4,9 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "Combat/ArcaneAbilityAvatar.h"
+#include "Combat/ArcaneCombatant.h"
+#include "Combat/ArcaneDamageable.h"
 #include "GameFramework/Character.h"
 #include "ArcaneCharacter.generated.h"
 
+class UArcaneCameraLeadComponent;
+class UArcaneMeleeCombatComponent;
 struct FGameplayTag;
 class UArcaneUserWidget;
 class UWidgetComponent;
@@ -14,7 +19,7 @@ class UArcaneAbilitySystemComponent;
 struct FOnAttributeChangeData;
 
 UCLASS()
-class ARCANE_ARENA_API AArcaneCharacter : public ACharacter, public IAbilitySystemInterface
+class ARCANE_ARENA_API AArcaneCharacter : public ACharacter, public IAbilitySystemInterface, public IArcaneCombatant, public IArcaneAbilityAvatar, public IArcaneDamageable
 {
 	GENERATED_BODY()
 
@@ -26,6 +31,24 @@ public:
 	
 	// 子类（PlayerState 归属 / Character 归属）各自覆盖，返回自己实际持有的 ASC
 	virtual UArcaneAbilitySystemComponent* GetArcaneASC() const;
+	
+	// IArcaneCombatant
+	virtual bool IsCombatAlive() const override;
+	virtual bool IsCombatInputLocked() const override;
+	virtual void ApplyCombatKnockback(const FVector& Impulse) override;
+	virtual void PlayCombatHitReaction(const FGameplayTag& ReactionTag) override;
+	
+	// IArcaneAbilityAvatar
+	virtual void ExecutePrimaryAttack(FName AbilityID) override;
+	virtual void ExecuteSecondaryAttack(FName AbilityID) override;
+	virtual void ExecuteFinishSecondaryAttack() override;
+	virtual void ExecuteHomingAttack(FName AbilityID, AActor* ProposedTarget, const FVector& AimPoint) override;
+	
+	// IArcaneDamageable：近战伤害的 C++ 目标实现
+	virtual void ApplyArcaneHit_Implementation(const FArcaneHitPayload& Payload) override;
+	
+	UFUNCTION(BlueprintPure, Category = "Arcane|Combat")
+	UArcaneMeleeCombatComponent* GetMeleeCombatComponent() const;
 
 	// 服务器端：初始化 Owner/Avatar 并授予默认能力
 	void InitAbilitySystem();
@@ -99,6 +122,14 @@ protected:
 	// 头顶血条（Screen 空间 WidgetComponent，跟随角色）
 	UPROPERTY(BlueprintReadOnly, Category = "Arcane|UI")
 	TObjectPtr<UWidgetComponent> HealthBarComp;
+	
+	// 近战结算组件：trace / 伤害 / 冲击 / CameraShake 都在里面
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arcane|Combat")
+	TObjectPtr<UArcaneMeleeCombatComponent> MeleeCombatComponent;
+	
+	// 本地玩家相机 lead
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arcane|Camera")
+	TObjectPtr<UArcaneCameraLeadComponent> CameraLeadComponent;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|UI")
 	TSubclassOf<UArcaneUserWidget> HealthBarWidgetClass;

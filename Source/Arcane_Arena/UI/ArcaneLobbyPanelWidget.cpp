@@ -348,10 +348,9 @@ void UArcaneLobbyPanelWidget::HandleCapMinusClicked()
 		return;
 	}
 	
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestSetTeamCapacity(FMath::Max(1, GS->MaxPlayersPerTeam - 1));
-	}
+	SendMatchCommand(
+		EArcaneMatchCommand::SetTeamCapacity,
+		FMath::Max(1, GS->MaxPlayersPerTeam - 1));
 }
 
 void UArcaneLobbyPanelWidget::HandleCapPlusClicked()
@@ -362,10 +361,9 @@ void UArcaneLobbyPanelWidget::HandleCapPlusClicked()
 		return;
 	}
 	
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestSetTeamCapacity(GS->MaxPlayersPerTeam + 1);
-	}
+	SendMatchCommand(
+		EArcaneMatchCommand::SetTeamCapacity,
+		GS->MaxPlayersPerTeam + 1);
 }
 
 void UArcaneLobbyPanelWidget::HandleRoundsMinusClicked()
@@ -376,10 +374,9 @@ void UArcaneLobbyPanelWidget::HandleRoundsMinusClicked()
 		return;
 	}
 	
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestSetRoundsToWin(FMath::Max(1, GS->RoundsToWin - 1));
-	}
+	SendMatchCommand(
+		EArcaneMatchCommand::SetRoundsToWin,
+		FMath::Max(1, GS->RoundsToWin - 1));
 }
 
 void UArcaneLobbyPanelWidget::HandleRoundsPlusClicked()
@@ -390,72 +387,60 @@ void UArcaneLobbyPanelWidget::HandleRoundsPlusClicked()
 		return;
 	}
 	
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
+	SendMatchCommand(
+		EArcaneMatchCommand::SetRoundsToWin,
+		GS->RoundsToWin + 1);
+}
+
+IArcaneMatchClient* UArcaneLobbyPanelWidget::GetMatchClient() const
+{
+	return Cast<IArcaneMatchClient>(GetOwningPlayer());
+}
+
+void UArcaneLobbyPanelWidget::SendMatchCommand(EArcaneMatchCommand Command, int32 Param)
+{
+	if (IArcaneMatchClient* Client = GetMatchClient())
 	{
-		PC->ServerRequestSetRoundsToWin(GS->RoundsToWin + 1);
+		Client->RequestMatchCommand(Command, Param);
 	}
 }
 
 void UArcaneLobbyPanelWidget::HandleAddBot0Clicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestAddBot(0);
-	}
+	SendMatchCommand(EArcaneMatchCommand::AddBot, 0);
 }
 
 void UArcaneLobbyPanelWidget::HandleAddBot1Clicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestAddBot(1);
-	}
+	SendMatchCommand(EArcaneMatchCommand::AddBot, 1);
 }
 
 void UArcaneLobbyPanelWidget::HandleRemoveBot0Clicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestRemoveBot(0);
-	}
+	SendMatchCommand(EArcaneMatchCommand::RemoveBot, 0);
 }
 
 void UArcaneLobbyPanelWidget::HandleRemoveBot1Clicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestRemoveBot(1);
-	}
+	SendMatchCommand(EArcaneMatchCommand::RemoveBot, 1);
 }
 
 void UArcaneLobbyPanelWidget::HandleBalanceClicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestBalanceBots();
-	}
+	SendMatchCommand(EArcaneMatchCommand::BalanceBots);
 }
 
 void UArcaneLobbyPanelWidget::HandleTeam0Clicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestChangeTeam(0);
-	}
+	SendMatchCommand(EArcaneMatchCommand::ChangeTeam, 0);
 }
 
 void UArcaneLobbyPanelWidget::HandleTeam1Clicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestChangeTeam(1);
-	}
+	SendMatchCommand(EArcaneMatchCommand::ChangeTeam, 1);
 }
 
 void UArcaneLobbyPanelWidget::HandleStartClicked()
 {
-	if (AArcanePlayerController* PC = Cast<AArcanePlayerController>(GetOwningPlayer()))
-	{
-		PC->ServerRequestStartMatch();
-	}
+	SendMatchCommand(EArcaneMatchCommand::StartMatch);
 }

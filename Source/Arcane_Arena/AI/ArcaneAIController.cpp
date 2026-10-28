@@ -10,6 +10,7 @@
 #include "Combat/ArcaneCombatDataLibrary.h"
 #include "Combat/ArcaneCombatFunctionLibrary.h"
 #include "Components/StateTreeAIComponent.h"
+#include "Core/ArcaneTeamUtils.h"
 #include "Framework/ArcaneGameState.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneAttributeSet.h"
@@ -108,9 +109,9 @@ AActor* AArcaneAIController::ResolveEnemyTarget() const
 	if (Best == nullptr)
 	{
 		const float EngagementRadiusSq = FMath::Square(EngagementRadius);
-		for (TActorIterator<AArcaneCharacter> It(GetWorld()); It; ++It)
+		for (TActorIterator<APawn> It(GetWorld()); It; ++It)
 		{
-			AArcaneCharacter* Other = *It;
+			APawn* Other = *It;
 			if (IsHostileCharacter(Other) == false)
 			{
 				continue;
@@ -148,46 +149,44 @@ float AArcaneAIController::GetTargetDistance() const
 	return FVector::Dist2D(SelfPawn->GetActorLocation(), Target->GetActorLocation());
 }
 
-bool AArcaneAIController::IsHostileCharacter(const AActor* Actor) const
+bool AArcaneAIController::IsHostileCharacter(AActor* Actor) const
 {
-	const APawn* SelfPawn = GetPawn();
-	if (Actor == nullptr || Actor == SelfPawn)
+	if (Actor == nullptr || Actor == GetPawn())
 	{
 		return false;
 	}
 	
-	const AArcaneCharacter* Other = Cast<AArcaneCharacter>(Actor);
-	if (Other == nullptr)
-	{
-		return false;
-	}
-	
-	const AArcanePlayerState* OtherPS = Other->GetPlayerState<AArcanePlayerState>();
-	if (OtherPS == nullptr || OtherPS->bIsDead)
+	const IArcaneCombatant* Combatant = Cast<IArcaneCombatant>(Actor);
+	if (Combatant == nullptr || !Combatant->IsCombatAlive())
 	{
 		return false;
 	}
 	
 	const int32 MyTeam = GetArcaneTeamID();
-	if (MyTeam < 0 || OtherPS->TeamID < 0)
-	{
-		return false;
-	}
-	
-	return OtherPS->TeamID != MyTeam;
+	const int32 OtherTeam = ArcaneTeam::GetTeamId(Actor);
+ 
+	return MyTeam >= 0 && OtherTeam >= 0 && MyTeam != OtherTeam;
 }
 
 float AArcaneAIController::GetTargetHealthFraction() const
 {
-	if (const AArcaneCharacter* TargetCharacter = Cast<AArcaneCharacter>(ResolveEnemyTarget()))
+	AActor* Target = ResolveEnemyTarget();
+	const IAbilitySystemInterface* TargetASI = Cast<IAbilitySystemInterface>(Target);
+	
+	if (TargetASI != nullptr)
 	{
-		if (const UArcaneAbilitySystemComponent* TargetASC = TargetCharacter->GetArcaneASC())
+		const UAbilitySystemComponent* TargetASC = TargetASI->GetAbilitySystemComponent();
+		if (TargetASC != nullptr)
 		{
-			const float MaxH = TargetASC->GetNumericAttribute(UArcaneAttributeSet::GetMaxHealthAttribute());
-			
+			const float MaxH = TargetASC->GetNumericAttribute(
+				UArcaneAttributeSet::GetMaxHealthAttribute());
+ 
 			if (MaxH > 0.0f)
 			{
-				return FMath::Clamp(TargetASC->GetNumericAttribute(UArcaneAttributeSet::GetHealthAttribute()) / MaxH, 0.0f, 1.0f);
+				return FMath::Clamp(
+					TargetASC->GetNumericAttribute(
+						UArcaneAttributeSet::GetHealthAttribute()) / MaxH,
+					0.0f, 1.0f);
 			}
 		}
 	}
@@ -295,9 +294,11 @@ bool AArcaneAIController::IsEnemyChargingThreat() const
 		return false;
 	}
 	
-	if (const AArcaneCharacter* TargetCharacter = Cast<AArcaneCharacter>(ResolveEnemyTarget()))
+	AActor* Target = ResolveEnemyTarget();
+	const IAbilitySystemInterface* TargetASI = Cast<IAbilitySystemInterface>(Target);
+	if (TargetASI != nullptr)
 	{
-		if (const UArcaneAbilitySystemComponent* TargetASC = TargetCharacter->GetArcaneASC())
+		if (const UAbilitySystemComponent* TargetASC = TargetASI->GetAbilitySystemComponent())
 		{
 			return TargetASC->HasMatchingGameplayTag(ChargingThreatTag);
 		}

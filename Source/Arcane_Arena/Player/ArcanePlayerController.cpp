@@ -3,15 +3,14 @@
 
 #include "ArcanePlayerController.h"
 
+#include "ArcaneSpectatorComponent.h"
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Blueprint/UserWidget.h"
-#include "Character/ArcaneBotCharacter.h"
 #include "Character/ArcaneCharacter.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/ArcaneGameMode.h"
-#include "Framework/ArcaneGameState.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "Player/ArcanePlayerState.h"   // Server RPC 里 GetPlayerState<AArcanePlayerState>() 需要完整类型
 #include "UI/ArcaneAbilityRangePreviewWidget.h"
@@ -22,6 +21,8 @@ AArcanePlayerController::AArcanePlayerController()
 {
 	bShowMouseCursor = true;
 	DefaultMouseCursor = EMouseCursor::Crosshairs;
+	
+	SpectatorComponent = CreateDefaultSubobject<UArcaneSpectatorComponent>(TEXT("SpectatorComponent"));
 }
 
 void AArcanePlayerController::BeginPlay()
@@ -72,7 +73,7 @@ void AArcanePlayerController::OnPossess(APawn* InPawn)
 	
 	// 重生换 Pawn：清掉观战态，把镜头交回自己新身体。
 	// 死亡时我们没 DisableInput，只锁了 Look，这里一并复原。
-	if (bIsSpectating)
+	if (IsSpectating())
 	{
 		LeaveSpectatorMode();
 	}
@@ -198,7 +199,7 @@ void AArcanePlayerController::OnAbilityInputPressed(int32 InputID)
 
 	if (const AArcaneCharacter* Avatar = Cast<AArcaneCharacter>(GetPawn()))
 	{
-		if (Avatar->IsMatchLocked() || bIsSpectating)
+		if (Avatar->IsMatchLocked() || IsSpectating())
 		{
 			return;
 		}
@@ -220,7 +221,7 @@ void AArcanePlayerController::OnAbilityInputReleased(int32 InputID)
 
 	if (const AArcaneCharacter* Avatar = Cast<AArcaneCharacter>(GetPawn()))
 	{
-		if (Avatar->IsMatchLocked() || bIsSpectating)
+		if (Avatar->IsMatchLocked() || IsSpectating())
 		{
 			return;
 		}
@@ -229,6 +230,43 @@ void AArcanePlayerController::OnAbilityInputReleased(int32 InputID)
 		{
 			ASC->AbilityLocalInputReleased(InputID);
 		}
+	}
+}
+
+void AArcanePlayerController::RequestMatchCommand(EArcaneMatchCommand Command, int32 Param)
+{
+	switch (Command)
+	{
+	case EArcaneMatchCommand::ChangeTeam:
+		ServerRequestChangeTeam(Param);
+		break;
+	case EArcaneMatchCommand::StartMatch:
+		ServerRequestStartMatch();
+		break;
+	case EArcaneMatchCommand::Rematch:
+		ServerRequestRematch();
+		break;
+	case EArcaneMatchCommand::BackToLobby:
+		ServerRequestBackToLobby();
+		break;
+	case EArcaneMatchCommand::AddBot:
+		ServerRequestAddBot(Param);
+		break;
+	case EArcaneMatchCommand::RemoveBot:
+		ServerRequestRemoveBot(Param);
+		break;
+	case EArcaneMatchCommand::BalanceBots:
+		ServerRequestBalanceBots();
+		break;
+	case EArcaneMatchCommand::SetTeamCapacity:
+		ServerRequestSetTeamCapacity(Param);
+		break;
+	case EArcaneMatchCommand::SetRoundsToWin:
+		ServerRequestSetRoundsToWin(Param);
+		break;
+	case EArcaneMatchCommand::None:
+	default:
+		break;
 	}
 }
 
@@ -307,58 +345,38 @@ void AArcanePlayerController::ServerRequestSetRoundsToWin_Implementation(int32 N
 
 void AArcanePlayerController::EnterSpectatorMode()
 {
-	if (bIsSpectating)
+	if (SpectatorComponent == nullptr || SpectatorComponent->IsSpectating())
 	{
 		return;
 	}
 	
-	TArray<AArcaneCharacter*> Teammates;
-	BuildLivingTeammates(Teammates);
-	
-	// 队里没活人（我方最后一名）→ 不进观战，原地等回合结算。
-	if (Teammates.Num() == 0)
+	if (!SpectatorComponent->EnterSpectatorMode())
 	{
 		return;
 	}
 	
-	bIsSpectating = true;
 	SetIgnoreLookInput(true);  // 锁定视角旋转，观战是固定跟随镜头
 	// 隐藏鼠标、沉浸观战；Leave 时由 ApplyViewportKeyboardFocus 复原 GameAndUI
 	FInputModeGameOnly InputMode;
 	SetInputMode(InputMode);
-	
-	ViewTeammate(Teammates[0]);
-	
-	GetWorldTimerManager().SetTimer(
-		SpectateValidateTimer, this,
-		&AArcanePlayerController::ValidateSpectateTarget, 
-		0.25f, true);
 }
 
 void AArcanePlayerController::LeaveSpectatorMode()
 {
-	if (bIsSpectating == false)
+	if (SpectatorComponent == nullptr || !SpectatorComponent->IsSpectating())
 	{
 		return;
 	}
-	
-	bIsSpectating = false;
-	
-	if (GetWorld())
-	{
-		GetWorldTimerManager().ClearTimer(SpectateValidateTimer);
-	}
-	
+ 
+	SpectatorComponent->LeaveSpectatorMode();
+ 
 	ResetIgnoreLookInput();
-	OnSpectateTargetChanged.Broadcast(nullptr);
-	
-	// 交回自己的新身体（重生路径下 OnPossess 已 Possess 到新 Pawn）
-	if (APawn* Self = GetPawn())
-	{
-		SetViewTargetWithBlend(Self, 0.4f);
-	}
-	
 	ApplyViewportKeyboardFocus();
+}
+
+bool AArcanePlayerController::IsSpectating() const
+{
+	return SpectatorComponent != nullptr && SpectatorComponent->IsSpectating();
 }
 
 void AArcanePlayerController::ShowAbilityRangePreview(AActor* SourceActor, float CastRange, float ImpactRadius)
@@ -391,139 +409,18 @@ void AArcanePlayerController::HideAbilityRangePreview()
 	}
 }
 
-int32 AArcanePlayerController::GetLocalTeamID() const
-{
-	if (const AArcanePlayerState* PS = GetPlayerState<AArcanePlayerState>())
-	{
-		return PS->TeamID;
-	}
-	
-	return INDEX_NONE;
-}
-
-void AArcanePlayerController::BuildLivingTeammates(TArray<AArcaneCharacter*>& OutTeammates) const
-{
-	OutTeammates.Reset();
-	const int32 MyTeam = GetLocalTeamID();
-	
-	if (MyTeam == INDEX_NONE || GetWorld() == nullptr)
-	{
-		return;
-	}
-	
-	// 客户端只能靠复制下来的 Character.bIsDead / PlayerState.TeamID 枚举；
-	// 远程玩家的 PlayerController 不复制，但 Pawn(Character) 是复制的，够用。
-	for (TActorIterator<AArcaneCharacter> It(GetWorld()); It; ++It)
-	{
-		AArcaneCharacter* Candidate = *It;
-		if (Candidate == nullptr || Candidate->bIsDead)
-		{
-			continue;
-		}
-		
-		const AArcanePlayerState* PS = Candidate->GetPlayerState<AArcanePlayerState>();
-		if (PS == nullptr || PS->TeamID != MyTeam)
-		{
-			continue;
-		}
-		
-		// Bot 也是一等 PlayerState，天然进候选池；没有 Pawn 的候选略过
-		if (Candidate == nullptr)
-		{
-			continue;
-		}
-		
-		OutTeammates.Add(Candidate);
-	}
-}
-
-void AArcanePlayerController::ViewTeammate(AArcaneCharacter* Target)
-{
-	if (Target == nullptr)
-	{
-		return;
-	}
-	
-	CurrentSpectateTarget = Target;
-	
-	// BlendTime 0.4s 平滑切入，观战不突兀。
-	SetViewTargetWithBlend(Target, 0.4f);
-	OnSpectateTargetChanged.Broadcast(Target);
-}
-
 void AArcanePlayerController::OnSpectateNext()
 {
-	CycleSpectateTarget(+1);
+	if (SpectatorComponent != nullptr)
+	{
+		SpectatorComponent->CycleNext();
+	}
 }
 
 void AArcanePlayerController::OnSpectatePrev()
 {
-	CycleSpectateTarget(-1);
-}
-
-void AArcanePlayerController::CycleSpectateTarget(int32 Direction)
-{
-	if (bIsSpectating == false)
+	if (SpectatorComponent != nullptr)
 	{
-		return;
-	}
-	
-	TArray<AArcaneCharacter*> Teammates;
-	BuildLivingTeammates(Teammates);
-	if (Teammates.Num() == 0)
-	{
-		return;
-	}
-	
-	int32 CurrentIndex = 0;
-	for (int32 i = 0; i < Teammates.Num(); ++i)
-	{
-		if (Teammates[i] == CurrentSpectateTarget.Get())
-		{
-			CurrentIndex = i;
-			break;
-		}
-	}
-	
-	const int32 N = Teammates.Num();
-	const int32 NextIndex = ((CurrentIndex + Direction) % N + N) % N; // 环绕
-	
-	ViewTeammate(Teammates[NextIndex]);
-}
-
-void AArcanePlayerController::ValidateSpectateTarget()
-{
-	if (bIsSpectating == false)
-	{
-		if (GetWorld() != nullptr)
-		{
-			GetWorldTimerManager().ClearTimer(SpectateValidateTimer);
-		}
-		
-		return;
-	}
-	
-	// 当前目标还在存活列表里 → 什么都不做
-	TArray<AArcaneCharacter*> Teammates;
-	BuildLivingTeammates(Teammates);
-	for (AArcaneCharacter* T : Teammates)
-	{
-		if (T == CurrentSpectateTarget.Get())
-		{
-			return;
-		}
-	}
-	
-	// 目标已死/消失：有别的活人就推进到第一个
-	if (Teammates.Num() > 0)
-	{
-		ViewTeammate(Teammates[0]);
-		return;
-	}
-	
-	// 全灭：保留看最后的尸体（若还有效）直到回合结束，不回切到自己尸体
-	if (!CurrentSpectateTarget.IsValid())
-	{
-		LeaveSpectatorMode();
+		SpectatorComponent->CyclePrev();
 	}
 }

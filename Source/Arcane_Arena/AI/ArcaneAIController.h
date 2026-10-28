@@ -49,7 +49,7 @@ public:
 	float GetTargetDistance() const;
 	
 	// 敌我判定
-	bool IsHostileCharacter(const AActor* Actor) const;
+	bool IsHostileCharacter(AActor* Actor) const;
 	
 	// 目标血量比例 0~1：AttackHeavy 效用曲线输入（满血值钱，残血归零）
 	UFUNCTION(BlueprintPure, Category = "Arcane|UI")

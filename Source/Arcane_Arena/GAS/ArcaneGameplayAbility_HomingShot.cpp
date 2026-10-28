@@ -66,8 +66,8 @@ void UArcaneGameplayAbility_HomingShot::HandleInputReleased(float TimeHeld)
 void UArcaneGameplayAbility_HomingShot::OnTargetReady(FTargetingRequestHandle TargetingHandle)
 {
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
-	AArcaneCharacter* Character = ActorInfo ? Cast<AArcaneCharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
-	if (Character == nullptr)
+	IArcaneAbilityAvatar* Avatar = ActorInfo ? Cast<IArcaneAbilityAvatar>(ActorInfo->AvatarActor.Get()) : nullptr;
+	if (Avatar == nullptr)
 	{
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 		return;
@@ -86,7 +86,7 @@ void UArcaneGameplayAbility_HomingShot::OnTargetReady(FTargetingRequestHandle Ta
 	const FVector AimPoint = UArcaneCombatFunctionLibrary::GetTargetingAimPoint(TargetingHandle);	
 	
 	// 只调契约，不做任何"该不该发射/目标合不合法"的判断——那是角色权威层的事
-	Character->BeginHomingAttack(AbilityID, Proposed, AimPoint);
+	Avatar->ExecuteHomingAttack(AbilityID, Proposed, AimPoint);
 	
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
@@ -114,8 +114,10 @@ void UArcaneGameplayAbility_HomingShot::ShowRangePreview()
 		return; // 服务器代远程玩家跑的那一份、Bot 那一份都不显示
 	}
  
-	AArcanePlayerController* PC = Cast<AArcanePlayerController>(ActorInfo->PlayerController.Get());
-	if (PC == nullptr)
+	APlayerController* PC = ActorInfo->PlayerController.Get();
+	IArcaneRangePreviewClient* PreviewClientInterface = Cast<IArcaneRangePreviewClient>(PC);
+	
+	if (PreviewClientInterface == nullptr)
 	{
 		return;
 	}
@@ -127,7 +129,7 @@ void UArcaneGameplayAbility_HomingShot::ShowRangePreview()
 		return;
 	}
  
-	PreviewPC = PC;
+	PreviewClient = PC;
 
 	// 内圈 = 选敌窗口（Preset 的 Lock 半径），不是弹体碰撞半径
 	const float InnerRadius = ResolvePreviewInnerRadius();
@@ -136,7 +138,7 @@ void UArcaneGameplayAbility_HomingShot::ShowRangePreview()
 		UE_LOG(LogArcane, Verbose, TEXT("[%s] TargetingPreset 里没有 Lock 选敌任务，内圈不显示"), *AbilityID.ToString());
 	}
 
-	PC->ShowAbilityRangePreview(ActorInfo->AvatarActor.Get(), Row.Range, InnerRadius);
+	PreviewClientInterface->ShowAbilityRangePreview(ActorInfo->AvatarActor.Get(), Row.Range, InnerRadius);
 }
 
 float UArcaneGameplayAbility_HomingShot::ResolvePreviewInnerRadius() const
@@ -165,10 +167,14 @@ float UArcaneGameplayAbility_HomingShot::ResolvePreviewInnerRadius() const
 
 void UArcaneGameplayAbility_HomingShot::HideRangePreview()
 {
-	if (AArcanePlayerController* PC = PreviewPC.Get())
+	if (UObject* ClientObject = PreviewClient.Get())
 	{
-		PC->HideAbilityRangePreview();
+		if (IArcaneRangePreviewClient* Preview =
+			Cast<IArcaneRangePreviewClient>(ClientObject))
+		{
+			Preview->HideAbilityRangePreview();
+		}
 	}
 	
-	PreviewPC.Reset();
+	PreviewClient.Reset();
 }

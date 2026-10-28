@@ -44,5 +44,5 @@ private:
 	// 注意不是 AbilityTable 的 Radius —— 那个只用于弹体碰撞球。
 	float ResolvePreviewInnerRadius() const;
 	
-	TWeakObjectPtr<AArcanePlayerController> PreviewPC;
+	TWeakObjectPtr<UObject> PreviewClient;
 };
