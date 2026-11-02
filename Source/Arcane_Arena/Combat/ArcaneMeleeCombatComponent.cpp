@@ -120,16 +120,5 @@ void UArcaneMeleeCombatComponent::PerformAttackTrace(FName SourceBone)
 		
 		UArcaneCombatFunctionLibrary::ApplyImpact(
 			Character, Target, StatusEffectClass, Impact, Hit);
-		
-		if (HitCameraShakeClass != nullptr)
-		{
-			UGameplayStatics::PlayWorldCameraShake(
-				this,
-				HitCameraShakeClass,
-				Hit.ImpactPoint,
-				CameraShakeInnerRadius,
-				CameraShakeOuterRadius
-			);
-		}
 	}
 }

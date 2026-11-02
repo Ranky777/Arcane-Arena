@@ -65,6 +65,30 @@ public:
 	FGameplayAttributeData MoveSpeed;
 	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, MoveSpeed)
 	
+	// --- 护盾与减伤（ExecutionCalculation 消费）---
+	// Shield 是持久状态，不是 Meta：需要复制给客户端做表现
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Shield, Category = "Arcane|Vital")
+	FGameplayAttributeData Shield;
+	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, Shield)
+	
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxShield, Category = "Arcane|Vital")
+	FGameplayAttributeData MaxShield;
+	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, MaxShield)
+	
+	// 0~1 百分比减伤；由 GE/Buff 用 AddBase 叠加
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReduction, Category = "Arcane|Defense")
+	FGameplayAttributeData DamageReduction;
+	ATTRIBUTE_ACCESSORS(UArcaneAttributeSet, DamageReduction)
+	
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Shield Attribute (BP)"))
+	static FGameplayAttribute BPGetShieldAttribute() { return GetShieldAttribute(); }
+ 
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Max Shield Attribute (BP)"))
+	static FGameplayAttribute BPGetMaxShieldAttribute() { return GetMaxShieldAttribute(); }
+ 
+	UFUNCTION(BlueprintPure, Category = "Arcane|Attributes", meta = (DisplayName = "Get Damage Reduction Attribute (BP)"))
+	static FGameplayAttribute BPGetDamageReductionAttribute() { return GetDamageReductionAttribute(); }
+	
 protected:
 	// GE 执行后钳制：伤害把 Health 打到负值时收敛到 0（死亡判定 <= 0 依赖此语义）
 	virtual void PostGameplayEffectExecute(const struct FGameplayEffectModCallbackData& Data) override;
@@ -88,4 +112,15 @@ protected:
 
 	UFUNCTION()
 	void OnRep_MoveSpeed(const FGameplayAttributeData& OldValue);
+	
+	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+	
+	UFUNCTION()
+	void OnRep_Shield(const FGameplayAttributeData& OldValue);
+	
+	UFUNCTION()
+	void OnRep_MaxShield(const FGameplayAttributeData& OldValue);
+	
+	UFUNCTION()
+	void OnRep_DamageReduction(const FGameplayAttributeData& OldValue);
 };

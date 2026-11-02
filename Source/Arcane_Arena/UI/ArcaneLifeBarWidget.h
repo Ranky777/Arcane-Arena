@@ -6,6 +6,7 @@
 #include "UI/ArcaneOwnerWidget.h"
 #include "ArcaneLifeBarWidget.generated.h"
 
+class UImage;
 class UProgressBar;
 class UTextBlock;
 
@@ -27,6 +28,10 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> Bar;
+	
+	// 与血条共用同一根 Bar 的护盾段；WBP 里必须是 BarLayer(CanvasPanel) 的子控件
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> ShieldSegment;
 
 	// 迁移期新增：血量数字（可选）
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -37,4 +42,11 @@ private:
 	float CurrentFill = 1.0f;
 	float MaxHealthSeen = 1.0f;
 	bool bLowHealth = false;
+	
+	void UpdateShieldGeometry();
+	
+	float TargetShield = 0.0f;
+	float CurrentShield = 0.0f;
+	float CachedShieldRadius = -1.0f;
+	bool bShieldRoundedLeft = false;
 };

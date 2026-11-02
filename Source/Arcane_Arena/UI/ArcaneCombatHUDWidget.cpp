@@ -37,6 +37,7 @@ void UArcaneCombatHUDWidget::NativeOnConstructed()
 	AddSlot(EArcaneAbilityInputID::Dash, Border_Dash, Icon_Dash, Text_CD_Dash);
 	AddSlot(EArcaneAbilityInputID::SecondaryAbility, Border_Secondary, Icon_Secondary, Text_CD_Secondary);
 	AddSlot(EArcaneAbilityInputID::Ultimate, Border_Ultimate, Icon_Ultimate, Text_CD_Ultimate);
+	AddSlot(EArcaneAbilityInputID::Shield, Border_Shield, Icon_Shield, Text_CD_Shield);
 
 	// 能量：绑定本机 PlayerState 的 ASC。加入客户端 HUD 构造时 PlayerState 往往
 	// 还没复制到 —— 这里失败不致命，NativeTick 里 TryBindLocalASC 会补绑。
@@ -78,7 +79,7 @@ void UArcaneCombatHUDWidget::NativeOnConstructed()
 	{
 		ArcaneUIStyle::ApplyProgressBar(EnergyBar);
 	}
-	UBorder* Dims[] = { Border_Dash, Border_Secondary, Border_Ultimate };
+	UBorder* Dims[] = { Border_Dash, Border_Secondary, Border_Ultimate, Border_Shield };
 	for (UBorder* Dim : Dims)
 	{
 		if (Dim)

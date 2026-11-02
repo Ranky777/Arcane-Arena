@@ -159,6 +159,13 @@ void UArcaneMatchFlowComponent::RespawnAllPlayers()
 				ASC->SetNumericAttributeBase(UArcaneAttributeSet::GetEnergyAttribute(), MaxEnergy);
 
 				ASC->ClearAllCooldowns();
+				
+				// 回合重置：清掉可能残留的护盾 buff，并把两个属性拉回 0
+				FGameplayTagContainer ShieldBuffTags;
+				ShieldBuffTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Status.Shield")));
+				ASC->RemoveActiveEffectsWithGrantedTags(ShieldBuffTags);
+				ASC->SetNumericAttributeBase(UArcaneAttributeSet::GetShieldAttribute(), 0.f);
+				ASC->SetNumericAttributeBase(UArcaneAttributeSet::GetDamageReductionAttribute(), 0.f);
 			}
 		}
 	}

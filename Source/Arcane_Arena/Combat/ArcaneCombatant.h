@@ -32,4 +32,11 @@ public:
 	
 	// 由 Combat 层在服务器调用，表现由角色实现
 	virtual void PlayCombatHitReaction(const FGameplayTag& ReactionTag) = 0;
+	
+	// 由 Combat 层在服务器调用：目标把命中表现广播给客户端（震屏 + 本地顿帧）。
+	// HitPause 来自 ImpactTable，表现层不写死。
+	virtual void PlayCombatHitFeedback(const FVector& HitLocation, float HitPause) = 0;
+	
+	// 由 Combat 层在服务器调用：按 ImpactTable 的 CueTag 向客户端广播一次性 Cue。
+	virtual void PlayCombatImpactCue(const FGameplayTag& CueTag, const FVector& Location, const FVector& Normal) = 0;
 };

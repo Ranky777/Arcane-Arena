@@ -38,16 +38,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arcane|Combat")
 	TSubclassOf<UGameplayEffect> StatusEffectClass;
 	
-	// 原蓝图硬编码的 BP_CameraShake_Hit_Enemy，在组件默认值里指定
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arcane|Combat")
-	TSubclassOf<UCameraShakeBase> HitCameraShakeClass;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arcane|Combat", meta = (ClampMin = "0.0"))
-	float CameraShakeInnerRadius = 500.0f;
- 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arcane|Combat", meta = (ClampMin = "0.0"))
-	float CameraShakeOuterRadius = 1000.0f;
-	
 private:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Arcane|Combat", meta = (AllowPrivateAccess = "true"))
 	FName CurrentAbilityID = NAME_None;

@@ -67,9 +67,9 @@ float UArcaneCombatFunctionLibrary::ApplyArcaneDamage(AActor* SourceActor, AActo
 		return 0.0f;
 	}
 
-	// ⚠ GE_Damage 的 Health 修改器是 AddBase（加法），SetByCaller 必须注入负值才是伤害；
-	// 注入正数会变成治疗（血量越打越高）
-	SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Damage")), -Damage);
+	// GE_Damage 已改为 ExecutionCalculation：这里只传正数基础伤害，
+	// 减伤、护盾吸收、扣 Health 的符号全部由 UArcaneDamageExecution 处理。
+	SpecHandle.Data->SetSetByCallerMagnitude(FGameplayTag::RequestGameplayTag(FName("Data.Damage")), Damage);
 	SourceASC->ApplyGameplayEffectSpecToTarget(*SpecHandle.Data.Get(), TargetASC);
 	
 	UE_LOG(LogArcane, Log, TEXT("[Damage] 结算：%s → %s 伤害 %.2f"),
@@ -102,18 +102,7 @@ void UArcaneCombatFunctionLibrary::ApplyImpact(AActor* SourceActor, AActor* Targ
 				TargetASC->ApplyGameplayEffectSpecToSelf(Spec);
 			}
 			
-			// 2. GameplayCue（本次表列留空，预留）
-			FGameplayCueParameters Params;
-			Params.Location = HitResult.ImpactPoint;
-			Params.Normal = HitResult.ImpactNormal;
-			Params.Instigator = SourceActor;
-			Params.EffectContext = TargetASC->MakeEffectContext();
-			for (const FGameplayTag& CueTag : ImpactRow.GameplayCueTags)
-			{
-				TargetASC->ExecuteGameplayCue(CueTag, Params);
-			}
-			
-			// 3. 受击反应蒙太奇（服务器发起，经角色复制；BP 实现 PlayHitReaction，见蓝图步骤 4）
+			// 2. 受击反应蒙太奇（服务器发起，经角色复制；BP 实现 PlayHitReaction，见蓝图步骤 4）
 			if (bServer && ImpactRow.HitReactionTag.IsValid())
 			{
 				if (IArcaneCombatant* Combatant = Cast<IArcaneCombatant>(TargetActor))
@@ -121,27 +110,19 @@ void UArcaneCombatFunctionLibrary::ApplyImpact(AActor* SourceActor, AActor* Targ
 					Combatant->PlayCombatHitReaction(ImpactRow.HitReactionTag);
 				}
 			}
-			
-			// 4. 命中顿帧（服务器）。⚠️ TimerManager 走游戏时间，会被 Dilation 拖慢，
-			//    所以恢复时长要乘 Dilation 折算，保证真实暂停≈HitPause 秒
-			if (bServer && ImpactRow.HitPause > 0.0f && SourceActor)
-			{
-				if (UWorld* World = SourceActor->GetWorld())
-				{
-					constexpr float Dilation = 0.1f;
-					UGameplayStatics::SetGlobalTimeDilation(World, Dilation);
-					
-					FTimerHandle Handle;
-					World->GetTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(World, [World]()
-					{
-						if (World->IsValidLowLevel())
-						{
-							UGameplayStatics::SetGlobalTimeDilation(World, 1.0f);
-						}
-					}), ImpactRow.HitPause * Dilation, false);
-				}
-			}
 		}
+	}
+	
+	// 3. 表现层：Cue / 震屏 / 本地顿帧。
+	// 与 HitReactionTag 解耦：没有受击表情的 Impact 也必须有表现。
+	if (IArcaneCombatant* TargetCombatant = Cast<IArcaneCombatant>(TargetActor))
+	{
+		for (const FGameplayTag& CueTag : ImpactRow.GameplayCueTags)
+		{
+			TargetCombatant->PlayCombatImpactCue(CueTag, HitResult.ImpactPoint, HitResult.ImpactNormal);
+		}
+ 
+		TargetCombatant->PlayCombatHitFeedback(HitResult.ImpactPoint, ImpactRow.HitPause);
 	}
 }
 

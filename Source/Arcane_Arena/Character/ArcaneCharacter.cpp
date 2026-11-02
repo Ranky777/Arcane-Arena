@@ -22,6 +22,7 @@
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneGameplayAbility.h"
 #include "GAS/ArcaneAttributeSet.h"
+#include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/ArcanePlayerController.h"
 #include "Player/ArcanePlayerState.h"
@@ -92,6 +93,74 @@ void AArcaneCharacter::ApplyCombatKnockback(const FVector& Impulse)
 void AArcaneCharacter::PlayCombatHitReaction(const FGameplayTag& ReactionTag)
 {
 	PlayHitReaction(ReactionTag);
+}
+
+void AArcaneCharacter::PlayCombatHitFeedback(const FVector& HitLocation, float HitPause)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	
+	Multicast_PlayHitFeedback(FVector_NetQuantize(HitLocation), HitPause);
+}
+
+void AArcaneCharacter::PlayCombatImpactCue(const FGameplayTag& CueTag, const FVector& Location, const FVector& Normal)
+{
+	if (!HasAuthority() || !CueTag.IsValid())
+	{
+		return;
+	}
+	
+	Multicast_ExecuteImpactCue(CueTag, FVector_NetQuantize(Location), FVector_NetQuantizeNormal(Normal));
+}
+
+void AArcaneCharacter::ApplyLocalHitStop(float Duration, float Dilation)
+{
+	if (Duration <= 0.0f)
+	{
+		return;
+	}
+	
+	// 叠击时保留最早的原始值，避免恢复到 0.1 这种中间态
+	if (!bHitStopActive)
+	{
+		PreHitStopTimeDilation = CustomTimeDilation;
+		bHitStopActive = true;
+	}
+	
+	CustomTimeDilation = FMath::Clamp(Dilation, 0.01f, 1.0f);
+ 
+	GetWorldTimerManager().ClearTimer(HitStopTimerHandle);
+	GetWorldTimerManager().SetTimer(HitStopTimerHandle, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		CustomTimeDilation = PreHitStopTimeDilation;
+		bHitStopActive = false;
+	}), Duration, false);
+}
+
+void AArcaneCharacter::Multicast_PlayHitFeedback_Implementation(FVector_NetQuantize HitLocation, float HitPause)
+{
+	if (HitCameraShakeClass != nullptr)
+	{
+		UGameplayStatics::PlayWorldCameraShake(this, HitCameraShakeClass, HitLocation, HitCameraShakeInnerRadius, HitCameraShakeOuterRadius);
+	}
+	
+	ApplyLocalHitStop(HitPause);
+}
+
+void AArcaneCharacter::Multicast_ExecuteImpactCue_Implementation(FGameplayTag CueTag, FVector_NetQuantize Location,
+	FVector_NetQuantizeNormal Normal)
+{
+	if (UArcaneAbilitySystemComponent* ASC = GetArcaneASC())
+	{
+		FGameplayCueParameters Params;
+		Params.Location = Location;
+		Params.Normal = Normal;
+		Params.EffectContext = ASC->MakeEffectContext();
+		
+		ASC->ExecuteGameplayCue(CueTag, Params);
+	}
 }
 
 void AArcaneCharacter::ExecutePrimaryAttack(FName AbilityID)
@@ -171,6 +240,7 @@ void AArcaneCharacter::InitAbilitySystem()
 	ASC->InitAbilityActorInfo(ArcanePS, this);
 	
 	GrantDefaultAbilities();
+	ApplyEnergyRegen();
 
 	BoundHealthASC = ASC;
 	// 绑定 Health 属性变化 → 死亡判定 / （未来）受击反馈
@@ -202,6 +272,7 @@ void AArcaneCharacter::InitHealthBar()
 			WB->InitFromASC(ASC);
 			WB->BindAttribute(UArcaneAttributeSet::GetHealthAttribute());
 			WB->BindAttribute(UArcaneAttributeSet::GetMaxHealthAttribute());
+			WB->BindAttribute((UArcaneAttributeSet::GetShieldAttribute()));
 			GetWorld()->GetTimerManager().ClearTimer(HealthBarRetryHandle);
 			
 			if (UArcaneOwnerWidget* OwnerWidget = Cast<UArcaneOwnerWidget>(WB))
@@ -288,6 +359,11 @@ void AArcaneCharacter::HandleDeath()
 	if (UAbilitySystemComponent* ASC = GetArcaneASC())
 	{
 		ASC->CancelAllAbilities();
+		
+		// 护盾是技能 buff，死亡即破碎；属性清零交给 buff 的移除回调
+		FGameplayTagContainer ShieldBuffTags;
+		ShieldBuffTags.AddTag(FGameplayTag::RequestGameplayTag(FName("Status.Shield")));
+		ASC->RemoveActiveEffectsWithGrantedTags(ShieldBuffTags);
 
 		// 解耦点：回合系统订阅 Event.Character.Death，不轮询、不硬引用角色
 		FGameplayEventData EventData;
@@ -391,6 +467,45 @@ void AArcaneCharacter::GrantDefaultAbilities()
 			Spec.SourceObject = GetOwner();
 			ASC->GiveAbility(Spec);
 		}
+	}
+}
+
+void AArcaneCharacter::ApplyEnergyRegen()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	
+	if (EnergyRegenEffectClass == nullptr)
+	{
+		UE_LOG(LogArcane, Warning, TEXT("[EnergyRegen] %s 未配置 EnergyRegenEffectClass，能量不会回复"), *GetName());
+		return;
+	}
+	
+	UArcaneAbilitySystemComponent* ASC = GetArcaneASC();
+	if (ASC == nullptr)
+	{
+		return;
+	}
+	
+	// ASC 挂在 PlayerState，跨重生不销毁；GE 授予 Status.EnergyRegen 做幂等守卫，
+	// 避免每次重生/重复 Init 叠多层回能。
+	const FGameplayTag RegenTag = FGameplayTag::RequestGameplayTag(FName("Status.EnergyRegen"));
+	if (ASC->HasMatchingGameplayTag(RegenTag))
+	{
+		return;
+	}
+	
+	const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(
+		EnergyRegenEffectClass,
+		1.0f,
+		ASC->MakeEffectContext()
+	);
+	
+	if (Spec.IsValid())
+	{
+		ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 	}
 }
 

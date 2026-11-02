@@ -55,6 +55,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arcane|UI")
 	float GetTargetHealthFraction() const;
 	
+	UFUNCTION(BlueprintPure, Category = "Arcane|AI")
+	float GetSelfHealthFraction() const;
+	
 	// 技能已授予且冷却完毕（攻击/闪避状态的硬门槛；值不值得由曲线说话）
 	UFUNCTION(BlueprintPure, Category = "Arcane|AI")
 	bool IsAbilityReady(TSubclassOf<UGameplayAbility> AbilityClass) const;

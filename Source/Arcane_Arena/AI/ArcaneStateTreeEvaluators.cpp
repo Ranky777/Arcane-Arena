@@ -41,6 +41,10 @@ void FArcaneBotFactsEvaluator::Tick(FStateTreeExecutionContext& Context, const f
 		&& Controller->HasLineOfSightToTarget();
 	Data.bDashReady = Controller->IsAbilityReady(Controller->GetDashAbilityClass());
 	
+	Data.SelfHealthFraction = Controller->GetSelfHealthFraction();
+	Data.bSelfLowHealth = Data.SelfHealthFraction <= Data.LowHealthThreshold;
+	Data.bShieldReady = Controller->IsAbilityReady(Data.ShieldAbility);
+	
 	if (CVarArcaneBotDebug.GetValueOnGameThread())
 	{
 		Data.DebugSnapshotTimer += DeltaTime;

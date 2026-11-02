@@ -42,6 +42,7 @@ namespace ArcaneUITheme
 	inline const FLinearColor NeutralPressed(0.09f, 0.10f, 0.14f);
 	inline const FLinearColor TeamBlue(0.13f, 0.42f, 0.85f);
 	inline const FLinearColor TeamRed(0.86f, 0.25f, 0.20f);
+	inline const FLinearColor ShieldFill(0.62f, 0.86f, 1.00f);
 
 	// —— 文本层级 ——
 	inline const FLinearColor TextPrimary(0.93f, 0.95f, 0.99f);

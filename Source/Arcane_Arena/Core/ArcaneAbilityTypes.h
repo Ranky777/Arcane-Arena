@@ -12,5 +12,6 @@ enum class EArcaneAbilityInputID : uint8
 	PrimaryAbility		UMETA(DisplayName = "Primary Ability"),
 	SecondaryAbility	UMETA(DisplayName = "Secondary Ability"),
 	Dash				UMETA(DisplayName = "Dash"),
-	Ultimate			UMETA(DisplayName = "Ultimate")
+	Ultimate			UMETA(DisplayName = "Ultimate"),
+	Shield				UMETA(DisplayName = "Shield"),
 };

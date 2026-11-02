@@ -10,6 +10,7 @@
 #include "GameFramework/Character.h"
 #include "ArcaneCharacter.generated.h"
 
+class UArcaneGameplayAbility;
 class UArcaneCameraLeadComponent;
 class UArcaneMeleeCombatComponent;
 struct FGameplayTag;
@@ -37,6 +38,12 @@ public:
 	virtual bool IsCombatInputLocked() const override;
 	virtual void ApplyCombatKnockback(const FVector& Impulse) override;
 	virtual void PlayCombatHitReaction(const FGameplayTag& ReactionTag) override;
+	virtual void PlayCombatHitFeedback(const FVector& HitLocation, float HitPause) override;
+	virtual void PlayCombatImpactCue(const FGameplayTag& CueTag, const FVector& Location, const FVector& Normal) override;
+	
+	// 本地顿帧：只改本 Actor 的 CustomTimeDilation，不动 World；可叠击，恢复原始值
+	UFUNCTION(BlueprintCallable, Category = "Arcane|Combat")
+	void ApplyLocalHitStop(float Duration = 0.05f, float Dilation = 0.1f);
 	
 	// IArcaneAbilityAvatar
 	virtual void ExecutePrimaryAttack(FName AbilityID) override;
@@ -117,7 +124,12 @@ protected:
 	
 	// 默认授予的能力（在 BP_CombatCharacter / BP_CombatEnemy 的 Class Defaults 里配）
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|GAS")
-	TArray<TSubclassOf<class UArcaneGameplayAbility>> DefaultAbilities;
+	TArray<TSubclassOf<UArcaneGameplayAbility>> DefaultAbilities;
+	
+	// 被动回能：Infinite + Periodic，每 tick 读 EnergyRegen 属性。
+	// ASC 挂在 PlayerState，跨重生不销毁；Status.EnergyRegen 做幂等守卫。
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|GAS")
+	TSubclassOf<UGameplayEffect> EnergyRegenEffectClass;
 
 	// 头顶血条（Screen 空间 WidgetComponent，跟随角色）
 	UPROPERTY(BlueprintReadOnly, Category = "Arcane|UI")
@@ -176,6 +188,24 @@ protected:
 	UFUNCTION()
 	void OnStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 	
+	// 命中表现：震屏 + 本地顿帧（Unreliable，纯表现）
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_PlayHitFeedback(FVector_NetQuantize HitLocation, float HitPause);
+	
+	// ImpactTable 的 GameplayCueTags：目标在客户端执行一次 Cue
+	UFUNCTION(NetMulticast, Unreliable)
+	void Multicast_ExecuteImpactCue(FGameplayTag CueTag,  FVector_NetQuantize Location, FVector_NetQuantizeNormal Normal);
+	
+	// 原近战组件上的 BP_CameraShake_Hit_Enemy 迁到角色上（所有角色共用）
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Feedback")
+	TSubclassOf<UCameraShakeBase> HitCameraShakeClass;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Feedback", meta = (ClampMin = "0.0"))
+	float HitCameraShakeInnerRadius = 500.0f;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Feedback", meta = (ClampMin = "0.0"))
+	float HitCameraShakeOuterRadius = 1000.0f;
+	
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -185,6 +215,8 @@ public:
 
 private:
 	void GrantDefaultAbilities();
+	
+	void ApplyEnergyRegen();
 	
 	void ApplyMatchLock();
 	
@@ -201,4 +233,8 @@ private:
 	// 血条绑定重试
 	FTimerHandle HealthBarRetryHandle;
 	int32 HealthBarRetries = 0;
+	
+	FTimerHandle HitStopTimerHandle;
+	bool bHitStopActive = false;
+	float PreHitStopTimeDilation = 1.0f;
 };

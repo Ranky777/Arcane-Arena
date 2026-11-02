@@ -26,7 +26,7 @@ class UTextBlock;
  * Group_ScoreBar / Group_AbilityBar / Panel_Lobby / Panel_Result /
  * Text_Team0Score / Text_Round / Text_Team1Score / Text_Team0Alive / Text_Team1Alive /
  * Text_Phase / EnergyBar /
- * Icon_Dash|Secondary|Ultimate / Border_Dash|... / Text_CD_Dash|... /
+ * Icon_Dash|Secondary|Ultimate|Shield / Border_Dash|... / Text_CD_Dash|... /
  * Text_Spectate
  */
 UCLASS()
@@ -111,6 +111,14 @@ protected:
 	TObjectPtr<UBorder> Border_Ultimate;
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_CD_Ultimate;
+
+	// —— 技能槽：护盾 ——
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Icon_Shield;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Shield;
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_CD_Shield;
 
 private:
 	struct FAbilitySlot

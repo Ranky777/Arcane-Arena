@@ -194,6 +194,19 @@ float AArcaneAIController::GetTargetHealthFraction() const
 	return 1.0f;
 }
 
+float AArcaneAIController::GetSelfHealthFraction() const
+{
+	const UArcaneAbilitySystemComponent* ASC = GetBotASC();
+	if (ASC == nullptr)
+	{
+		return 1.0f;
+	}
+	
+	const float MaxHealth = ASC->GetNumericAttribute(UArcaneAttributeSet::GetMaxHealthAttribute());
+	const float Health = ASC->GetNumericAttribute(UArcaneAttributeSet::GetHealthAttribute());
+	return MaxHealth > 0.0f ? FMath::Clamp(Health / MaxHealth, 0.0f, 1.0f) : 0.0f;
+}
+
 bool AArcaneAIController::IsAbilityReady(TSubclassOf<UGameplayAbility> AbilityClass) const
 {
 	return HasAbilitySpec(AbilityClass) && GetAbilityCooldownRemaining(AbilityClass) <= 0.0 && HasEnoughEnergyForAbility(AbilityClass);

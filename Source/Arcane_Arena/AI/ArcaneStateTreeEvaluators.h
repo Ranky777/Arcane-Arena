@@ -64,6 +64,21 @@ struct FArcaneBotFactsInstanceData
 	// Arcane.AI.BotDebug 快照节流计时（仅调试用，不序列化）
 	UPROPERTY(Transient)
 	float DebugSnapshotTimer = 0.0f;
+	
+	UPROPERTY(EditAnywhere, Category = "Parameter")
+	TSubclassOf<UGameplayAbility> ShieldAbility;
+	
+	UPROPERTY(EditAnywhere, Category = "Parameter", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float LowHealthThreshold = 0.35f;
+ 
+	UPROPERTY(EditAnywhere, Category = "Default")
+	float SelfHealthFraction = 1.0f;
+ 
+	UPROPERTY(EditAnywhere, Category = "Default")
+	bool bSelfLowHealth = false;
+ 
+	UPROPERTY(EditAnywhere, Category = "Default")
+	bool bShieldReady = false;
 };
 
 /**
