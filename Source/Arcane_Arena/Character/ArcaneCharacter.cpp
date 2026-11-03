@@ -4,6 +4,7 @@
 #include "ArcaneCharacter.h"
 
 #include "ArcaneCameraLeadComponent.h"
+#include "ArcaneCharacterMovementComponent.h"
 #include "Arcane_Arena.h"
 #include "Camera/CameraComponent.h"
 #include "Components.h"
@@ -36,7 +37,8 @@ static TAutoConsoleVariable<bool> CVarDrawHomingRange(
 	TEXT("绘制远程锁定技的施法射程与空技能落点"), ECVF_Default);
 
 // Sets default values
-AArcaneCharacter::AArcaneCharacter()
+AArcaneCharacter::AArcaneCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UArcaneCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	bReplicates = true;
 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
@@ -316,6 +318,11 @@ void AArcaneCharacter::OnStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 	{
 		if (NewCount > 0)
 		{
+			if (UArcaneCharacterMovementComponent* ArcaneMove = Cast<UArcaneCharacterMovementComponent>(Move))
+			{
+				ArcaneMove->StopDash();
+			}
+			
 			Move->StopMovementImmediately();
 			Move->DisableMovement();
 		}

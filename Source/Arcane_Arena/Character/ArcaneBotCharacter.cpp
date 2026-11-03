@@ -6,7 +6,8 @@
 #include "Framework/ArcaneGameInstance.h"
 #include "GameFramework/SpringArmComponent.h"
 
-AArcaneBotCharacter::AArcaneBotCharacter()
+AArcaneBotCharacter::AArcaneBotCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	SpectateBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpectateBoom"));
 	SpectateBoom->SetupAttachment(Cast<USceneComponent>(GetCapsuleComponent()));

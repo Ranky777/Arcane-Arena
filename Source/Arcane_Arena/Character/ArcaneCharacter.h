@@ -26,7 +26,7 @@ class ARCANE_ARENA_API AArcaneCharacter : public ACharacter, public IAbilitySyst
 
 public:
 	// Sets default values for this character's properties
-	AArcaneCharacter();
+	AArcaneCharacter(const FObjectInitializer& ObjectInitializer);
 	
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	

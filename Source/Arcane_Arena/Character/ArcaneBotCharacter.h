@@ -20,7 +20,7 @@ class ARCANE_ARENA_API AArcaneBotCharacter : public AArcaneCharacter
 	GENERATED_BODY()
 	
 public:
-	AArcaneBotCharacter();
+	AArcaneBotCharacter(const FObjectInitializer& ObjectInitializer);
 
 protected:
 	virtual void BeginPlay() override;

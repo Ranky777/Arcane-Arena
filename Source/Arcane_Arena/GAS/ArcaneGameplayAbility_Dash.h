@@ -16,7 +16,7 @@ class ARCANE_ARENA_API UArcaneGameplayAbility_Dash : public UArcaneGameplayAbili
 	GENERATED_BODY()
 
 public:
-	// 根运动强度
+	// 冲刺速度（uu/s）。位移距离 ≈ DashStrength * DashDuration
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arcane|Dash", meta = (ClampMin = "0.0"))
 	float DashStrength = 3000.0f;
  
@@ -30,6 +30,7 @@ public:
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData) override;
+	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled) override;
 	
 	UFUNCTION()
 	void OnDashFinished();
