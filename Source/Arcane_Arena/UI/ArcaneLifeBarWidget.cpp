@@ -14,7 +14,6 @@ void UArcaneLifeBarWidget::NativeConstruct()
 	Super::NativeConstruct();
 
 	TargetFill = CurrentFill = 1.0f;
-	bLowHealth = false;
 
 	if (Bar)
 	{
@@ -166,20 +165,4 @@ void UArcaneLifeBarWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
 	
 	CurrentShield = FMath::FInterpTo(CurrentShield, TargetShield, InDeltaTime, ArcaneUITheme::BarInterpSpeed);
 	UpdateShieldGeometry();
-
-	// 低血量脉冲：在红橙色间呼吸，提示危急状态
-	const bool bNowLow = CurrentFill <= ArcaneUITheme::LowHealthRatio && CurrentFill > 0.0f;
-	if (bNowLow != bLowHealth)
-	{
-		bLowHealth = bNowLow;
-		if (!bLowHealth)
-		{
-			NativeOnOwnerRelationSet(GetOwnerRelation());
-		}
-	}
-	if (bLowHealth)
-	{
-		const float Pulse = 0.5f + 0.5f * FMath::Sin(GetWorld()->GetTimeSeconds() * 6.0f);
-		Bar->SetFillColorAndOpacity(FMath::Lerp(ArcaneUITheme::HealthLow, ArcaneUITheme::HealthEnemy, Pulse));
-	}
 }

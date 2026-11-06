@@ -41,7 +41,6 @@ private:
 	float TargetFill = 1.0f;
 	float CurrentFill = 1.0f;
 	float MaxHealthSeen = 1.0f;
-	bool bLowHealth = false;
 	
 	void UpdateShieldGeometry();
 	

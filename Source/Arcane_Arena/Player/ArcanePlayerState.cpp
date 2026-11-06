@@ -7,6 +7,7 @@
 #include "Framework/ArcaneGameState.h"
 #include "GAS/ArcaneAbilitySystemComponent.h"
 #include "GAS/ArcaneAttributeSet.h"
+#include "Net/ArcaneNetGuardComponent.h"
 #include "Net/UnrealNetwork.h"
 
 AArcanePlayerState::AArcanePlayerState()
@@ -19,6 +20,7 @@ AArcanePlayerState::AArcanePlayerState()
 	ArcaneASC->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 	
 	AttributeSet = CreateDefaultSubobject<UArcaneAttributeSet>(TEXT("ArcaneAttributeSet"));
+	NetGuard = CreateDefaultSubobject<UArcaneNetGuardComponent>(TEXT("NetGuard"));
 }
 
 UAbilitySystemComponent* AArcanePlayerState::GetAbilitySystemComponent() const
