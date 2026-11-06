@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerState.h"
 #include "ArcanePlayerState.generated.h"
 
+class UArcaneNetGuardComponent;
 class UArcaneAttributeSet;
 class UArcaneAbilitySystemComponent;
 /**
@@ -59,6 +60,9 @@ public:
 	// 直接访问成员变量在蓝图里不好连线，包一层 Pure 更顺手。
 	UFUNCTION(BlueprintPure, Category = "Arcane|Match")
 	bool IsRoomOwner() const { return bIsRoomOwner; }
+	
+	UFUNCTION(BlueprintPure, Category = "Arcane|Net")
+	UArcaneNetGuardComponent* GetNetGuard() const { return NetGuard.Get(); }
 
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -71,4 +75,9 @@ protected:
 	
 	UPROPERTY()
 	TObjectPtr<UArcaneAttributeSet> AttributeSet;
+	
+	// 服务器信任边界：RPC 限流 + 远程技能意图缓存。
+	// 不复制；客户端不需要知道它的存在。
+	UPROPERTY(VisibleAnywhere, Category = "Arcane|Net")
+	TObjectPtr<UArcaneNetGuardComponent> NetGuard;
 };

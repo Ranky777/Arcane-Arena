@@ -95,6 +95,36 @@ void UArcaneAbilitySystemComponent::ClearAllCooldowns()
 }
 
 
+UArcaneGameplayAbility* UArcaneAbilitySystemComponent::FindAbilityByAbilityID(FName AbilityID,
+	FGameplayAbilitySpecHandle& OutHandle) const
+{
+	OutHandle = FGameplayAbilitySpecHandle();
+	
+	if (AbilityID.IsNone())
+	{
+		return nullptr;
+	}
+	
+	for (const FGameplayAbilitySpec& Spec : GetActivatableAbilities())
+	{
+		UGameplayAbility* Ability = Spec.GetPrimaryInstance();
+		if (Ability == nullptr)
+		{
+			Ability = Spec.Ability.Get();
+		}
+		
+		UArcaneGameplayAbility* ArcaneAbility = Cast<UArcaneGameplayAbility>(Ability);
+		if (ArcaneAbility != nullptr && ArcaneAbility->AbilityID == AbilityID)
+		{
+			OutHandle = Spec.Handle;
+			
+			return ArcaneAbility;
+		}
+	}
+	
+	return nullptr;
+}
+
 // Called when the game starts
 void UArcaneAbilitySystemComponent::BeginPlay()
 {

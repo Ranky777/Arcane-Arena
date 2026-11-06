@@ -78,8 +78,8 @@ namespace ArcaneUITheme
 	inline const FLinearColor HealthSelf(0.35f, 0.85f, 0.42f);
 	inline const FLinearColor HealthAlly(0.25f, 0.65f, 1.00f);
 	inline const FLinearColor HealthEnemy(0.95f, 0.30f, 0.24f);
-	inline const FLinearColor HealthLow(1.00f, 0.45f, 0.15f);
-	inline const float LowHealthRatio = 0.30f;
+	// inline const FLinearColor HealthLow(1.00f, 0.45f, 0.15f);
+	// inline const float LowHealthRatio = 0.30f;
 
 	// —— 能量（蓝条）——
 	inline const FLinearColor Energy(0.35f, 0.72f, 1.00f);

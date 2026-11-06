@@ -24,6 +24,7 @@
 #include "GAS/ArcaneGameplayAbility.h"
 #include "GAS/ArcaneAttributeSet.h"
 #include "Kismet/GameplayStatics.h"
+#include "Net/ArcaneNetGuardComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Player/ArcanePlayerController.h"
 #include "Player/ArcanePlayerState.h"
@@ -71,6 +72,16 @@ UArcaneAbilitySystemComponent* AArcaneCharacter::GetArcaneASC() const
 		return ArcanePS->GetArcaneASC();
 	}
 
+	return nullptr;
+}
+
+UArcaneNetGuardComponent* AArcaneCharacter::GetNetGuard() const
+{
+	if (const AArcanePlayerState* ArcanePS = GetPlayerState<AArcanePlayerState>())
+	{
+		return ArcanePS->GetNetGuard();
+	}
+	
 	return nullptr;
 }
 
@@ -201,10 +212,15 @@ void AArcaneCharacter::ApplyArcaneHit_Implementation(const FArcaneHitPayload& Pa
 		Hit);
 	
 	// 近战击退刻意只取 X/Y，保持原 EventApplyDamage 的 MakeVector(X,Y)
-	LaunchCharacter(
-		FVector(Payload.Impulse.X, Payload.Impulse.Y, 0.0f),
-		true,
-		true);
+	// 位移只在服务器施加：客户端也会跑表现层的 trace，
+	// 但本地位移会和服务器纠偏打架，高延迟下表现为“先被推走、再被拉回”。
+	if (HasAuthority())
+	{
+		LaunchCharacter(
+		   FVector(Payload.Impulse.X, Payload.Impulse.Y, 0.0f),
+		   true,
+		   true);
+	}
 }
 
 UArcaneMeleeCombatComponent* AArcaneCharacter::GetMeleeCombatComponent() const
@@ -534,8 +550,8 @@ void AArcaneCharacter::BeginHomingAttack_Implementation(FName AbilityID, AActor*
 	
 	if (!HasAuthority())
 	{
-		// 纯客户端：本地预测激活里算好的选敌结果只是本侧信息，上报给服务器裁决。
-		// （Bot 的 Pawn 在客户端是 SimulatedProxy，但技能只在服务器激活，走不到这里）
+		// 纯客户端：本地预测里算好的选敌结果只是本侧信息，上报给服务器裁决。
+		// 注意：RPC 只传“意图”，不会直接生成弹体。
 		if (bPlayerControlled)
 		{
 			ServerRequestHomingAttack(AbilityID, ProposedTarget, AimPoint);
@@ -544,10 +560,40 @@ void AArcaneCharacter::BeginHomingAttack_Implementation(FName AbilityID, AActor*
 		return;
 	}
 	
-	// 远程玩家的 GA 也会在服务器再跑一次（GAS 的复制激活），那边 IsLocallyControlled()==false。
-	// 这条分支必须什么都不做，否则一次输入两发弹——发射已经在它的 RPC 里做过了。
 	if (bPlayerControlled && !IsLocallyControlled())
 	{
+		// 远程玩家的服务器侧 GA：CommitAbility 已经成功（OnTargetReady 里先 Commit 再 Execute）。
+		// 这里只做两件事：
+		//   1) 客户端意图先到 → 直接消费并发射；
+		//   2) 客户端意图还没到 → 发一张短时许可，由稍后到达的 RPC 消费并发射。
+		//
+		// 注意：不能用服务器 targeting 兜底。对远程玩家，Lock 任务的圆心会退化到
+		// “自己脚下”（IsLocallyControlled=false 且不是 AI），AimPoint 是施法者位置，
+		// Direction 接近零，等于白丢一发。
+		UArcaneNetGuardComponent* Guard = GetNetGuard();
+		if (Guard == nullptr)
+		{
+			return;
+		}
+		
+		FArcaneHomingRequest Request;
+		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0;
+		
+		// 0.35s 的窗口只用于容忍“RPC 与服务器 GA 输入释放”的到达顺序差异；
+		// 超过这个时间的请求视为过期，不能污染下一发。
+		if (Guard->ConsumeHomingRequest(AbilityID, Now, 0.35, Request))
+		{
+			ProposedTarget = Request.ProposedTarget.Get();
+			AimPoint = Request.AimPoint;
+			
+			LaunchHomingAttack(AbilityID, ProposedTarget, AimPoint);
+			return;
+		}
+		
+		// RPC 还没到：Commit 已完成，发许可。许可 0.35s 过期，
+		// 过期说明这发没有合法的客户端意图，就不发射。
+		Guard->IssueHomingCommitToken(AbilityID, Now);
+		
 		return;
 	}
 	
@@ -648,7 +694,89 @@ FVector AArcaneCharacter::GetHomingAimOffset() const
 
 void AArcaneCharacter::ServerRequestHomingAttack_Implementation(FName AbilityID, AActor* ProposedTarget, FVector AimPoint)
 {
-	LaunchHomingAttack(AbilityID, ProposedTarget, AimPoint);
+	if (!HasAuthority() || bMatchLocked || bIsDead)
+	{
+		return;
+	}
+	
+	UArcaneNetGuardComponent* Guard = GetNetGuard();
+	if (Guard == nullptr)
+	{
+		return;
+	}
+	
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	
+	// 1) 频率门禁：RPC 是可靠通道，先挡住刷包，避免它挤占带宽/CPU。
+	if (!Guard->TryConsumeRpcBudget(FName(TEXT("HomingShot")), Now))
+	{
+		Guard->RejectedHomingRequests++;
+		UE_LOG(LogArcane, Warning,
+			TEXT("[NetGuard] 拒绝 %s 的 HomingShot：RPC 频率超限"), *GetNameSafe(this));
+		return;
+	}
+	
+	// 2) 基本数据合法性：NaN 坐标会污染后面的方向/落点计算。
+	if (AimPoint.ContainsNaN())
+	{
+		Guard->RejectedHomingRequests++;
+		UE_LOG(LogArcane, Warning,
+			TEXT("[NetGuard] 拒绝 %s 的 HomingShot：AimPoint 含 NaN"), *GetNameSafe(this));
+		return;
+	}
+	
+	// 3) 能力门禁：请求必须对应一条已授予、当前不在冷却、耗能足够的技能。
+	//    这里只做“早拒绝”；真正的发射门禁仍然是服务器 GA 的 CommitAbility。
+	UArcaneAbilitySystemComponent* ASC = GetArcaneASC();
+	FGameplayAbilitySpecHandle Handle;
+	UArcaneGameplayAbility* Ability = ASC ? ASC->FindAbilityByAbilityID(AbilityID, Handle) : nullptr;
+	
+	if (Ability == nullptr)
+	{
+		Guard->RejectedHomingRequests++;
+		UE_LOG(LogArcane, Warning,
+			TEXT("[NetGuard] 拒绝 %s 的 HomingShot：找不到 AbilityID=%s"),
+			*GetNameSafe(this), *AbilityID.ToString());
+		return;
+	}
+	
+	// 4) 先消费“GA 已 Commit”的许可。
+	//    有许可 = GA 先到，本次 RPC 负责用客户端意图发射；
+	//    无许可 = RPC 先到，只存意图，等 GA Commit 后消费。
+	//    token 检查必须在冷却检查之前，否则 GA 先到时合法 RPC 会被冷却误杀。
+	const bool bCommitTokenConsumed = Guard->ConsumeHomingCommitToken(AbilityID, Now, 0.35);
+	
+	if (!bCommitTokenConsumed)
+	{
+		const FGameplayAbilityActorInfo* ActorInfo = ASC->AbilityActorInfo.Get();
+		if (ActorInfo == nullptr
+			|| !Ability->CheckCooldown(Handle, ActorInfo)
+			|| !Ability->CheckCost(Handle, ActorInfo))
+		{
+			Guard->RejectedHomingRequests++;
+			UE_LOG(LogArcane, Warning,
+				TEXT("[NetGuard] 拒绝 %s 的 HomingShot：冷却/耗能/标签门禁未通过"),
+				*GetNameSafe(this));
+			return;
+		}
+	}
+	
+	Guard->AcceptedHomingRequests++;
+ 
+	if (bCommitTokenConsumed)
+	{
+		// GA 已经成功 Commit；token 就是这次发射的授权。
+		// 不再查冷却/耗能，避免把“已经付过钱”的合法请求误杀。
+		LaunchHomingAttack(AbilityID, ProposedTarget, AimPoint);
+		return;
+	}
+ 
+	// RPC 先到：只登记意图，不生成弹体；服务器 GA 会消费它。
+	Guard->StoreHomingRequest(AbilityID, ProposedTarget, AimPoint, Now);
+ 
+	UE_LOG(LogArcane, Verbose,
+		TEXT("[NetGuard] 接受 %s 的 HomingShot 请求（等待服务器 GA 提交）"),
+		*GetNameSafe(this));
 }
 
 void AArcaneCharacter::SetMatchLocked(bool bLocked)
@@ -748,6 +876,51 @@ void AArcaneCharacter::AddMovementInput(FVector WorldDirection, float ScaleValue
 	}
 	
 	Super::AddMovementInput(WorldDirection, ScaleValue, bForce);
+}
+
+void AArcaneCharacter::PlayAttackMontageForAll(UAnimMontage* Montage, float PlayRate, FName StartSection)
+{
+	if (!HasAuthority() || Montage == nullptr)
+	{
+		return;
+	}
+	
+	Multicast_PlayAttackMontage(Montage, PlayRate, StartSection);
+}
+
+void AArcaneCharacter::JumpAttackMontageForAll(UAnimMontage* Montage, FName SectionName)
+{
+	if (!HasAuthority() || Montage == nullptr)
+	{
+		return;
+	}
+	
+	Multicast_JumpAttackMontage(Montage, SectionName);
+}
+
+void AArcaneCharacter::Multicast_PlayAttackMontage_Implementation(UAnimMontage* Montage, float PlayRate,
+	FName StartSection)
+{
+	if (HasAuthority() || Montage == nullptr)
+	{
+		// 服务器/主机本地已经由 BP 的 PlayMontage 播过了。
+		return;
+	}
+	
+	PlayAnimMontage(Montage, PlayRate, StartSection);
+}
+
+void AArcaneCharacter::Multicast_JumpAttackMontage_Implementation(UAnimMontage* Montage, FName SectionName)
+{
+	if (HasAuthority() || Montage == nullptr || GetMesh() == nullptr)
+	{
+		return;
+	}
+	
+	if (UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance())
+	{
+		AnimInstance->Montage_JumpToSection(SectionName, Montage);
+	}
 }
 
 void AArcaneCharacter::CheckJumpInput(float DeltaTime)

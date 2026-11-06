@@ -10,6 +10,7 @@
 #include "GameFramework/Character.h"
 #include "ArcaneCharacter.generated.h"
 
+class UArcaneNetGuardComponent;
 class UArcaneGameplayAbility;
 class UArcaneCameraLeadComponent;
 class UArcaneMeleeCombatComponent;
@@ -32,6 +33,10 @@ public:
 	
 	// 子类（PlayerState 归属 / Character 归属）各自覆盖，返回自己实际持有的 ASC
 	virtual UArcaneAbilitySystemComponent* GetArcaneASC() const;
+	
+	// 服务端信任边界：频率限制 + 远程技能意图缓存（挂在 PlayerState 上）
+	UFUNCTION(BlueprintPure, Category = "Arcane|Net")
+	UArcaneNetGuardComponent* GetNetGuard() const;
 	
 	// IArcaneCombatant
 	virtual bool IsCombatAlive() const override;
@@ -108,6 +113,25 @@ public:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_IsDead, Category = "Arcane|State")
 	bool bIsDead = false;
 	
+	// Server RPC 由引擎保证"只能由本 Actor 的 owning connection 发起"，
+	// 但"报哪个 Actor 当目标"不可信，所以真伪一律交给 LaunchHomingAttack 内的 ResolveLockTarget
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Arcane|Debug")
+	void ServerRequestHomingAttack(FName AbilityID, AActor* ProposedTarget, FVector AimPoint);
+	
+	// 服务器调用：把攻击 Montage 同步给所有客户端。
+	// 服务器/主机本地已经由 BP 的 PlayMontage 播过，所以 Multicast 实现里会跳过权威端。
+	UFUNCTION(BlueprintCallable, Category = "Arcane|Combat")
+	void PlayAttackMontageForAll(UAnimMontage* Montage, float PlayRate = 1.0f, FName StartSection = NAME_None);
+	
+	UFUNCTION(BlueprintCallable, Category = "Arcane|Combat")
+	void JumpAttackMontageForAll(UAnimMontage* Montage, FName SectionName);
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayAttackMontage(UAnimMontage* Montage, float PlayRate, FName StartSection);
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_JumpAttackMontage(UAnimMontage* Montage, FName SectionName);
+	
 protected:
 	// IA_Jump 同理：锁定时不吃跳跃输入，避免起跳把 MovementMode 顶成 Falling。
 	virtual void CheckJumpInput(float DeltaTime) override;
@@ -154,11 +178,7 @@ protected:
 	// Bot 子类向 AI Controller 取一个带随机误差的偏移。玩家与 Bot 共用同一条发射链路。
 	virtual FVector GetHomingAimOffset() const;	
 	
-	// Server RPC 由引擎保证"只能由本 Actor 的 owning connection 发起"，
-	// 但"报哪个 Actor 当目标"不可信，所以真伪一律交给 LaunchHomingAttack 内的 ResolveLockTarget
-	UFUNCTION(Server, Reliable)
-	void ServerRequestHomingAttack(FName AbilityID, AActor* ProposedTarget, FVector AimPoint);
-	
+
 	// 出膛点 = ActorLocation + Forward*SpawnForward + Up*SpawnHeight。
 	// 不依赖骨骼插槽：玩家骨架与 Bot 骨架不同也能共用一条规则
 	UPROPERTY(EditDefaultsOnly, Category = "Arcane|Combat", meta = (ClampMin = "0.0"))

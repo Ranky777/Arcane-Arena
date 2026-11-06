@@ -1,0 +1,6 @@
+﻿---,DisplayName,BaseDamage,DamageFalloffCurve,EnergyCost,CooldownDuration,CooldownTag,TargetingMode,Range,Radius,DamageEffectClass,ImpactProfileID,AbilityTags,ProjectileClass,ProjectileSpeed,HomingTurnRate
+PrimaryAttack,Primary,20,DamageFalloff_Near,0,0,,MeleeSweep,200,30,/Game/Arcane/Blueprints/GAS/GameplayEffect/GE_Damage.GE_Damage_C,IMP_SoftKnock,(GameplayTags=()),,1200,720
+SecondaryAttack,Secondary,45,DamageFalloff_Near,10,2,Ability.Cooldown.SecondaryAttack,MeleeSweep,220,40,/Game/Arcane/Blueprints/GAS/GameplayEffect/GE_Damage.GE_Damage_C,IMP_HeavyKnock,(GameplayTags=()),,1200,720
+Dash,Dash,0,,0,3,Ability.Cooldown.Dash,MeleeSweep,0,0,,IMP_None,(GameplayTags=()),,1200,720
+HomingBolt,奥术追猎弹,40,,25,8,Ability.Cooldown.HomingBolt,Projectile,800,35,/Game/Arcane/Blueprints/GAS/GameplayEffect/GE_Damage.GE_Damage_C,IMP_BoltKnock,(GameplayTags=()),/Game/Arcane/Blueprints/GAS/Projectile/BP_ArcaneProjectile.BP_ArcaneProjectile_C,1600,540
+Shield,奥术护盾,0,,20,8,Ability.Cooldown.Shield,MeleeSweep,0,0,,IMP_None,(GameplayTags=()),,1200,720

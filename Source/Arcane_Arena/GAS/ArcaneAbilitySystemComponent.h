@@ -7,6 +7,7 @@
 #include "ArcaneAbilitySystemComponent.generated.h"
 
 
+class UArcaneGameplayAbility;
 enum class EArcaneAbilityInputID : uint8;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnArcaneAbilityCommitted);
@@ -31,6 +32,10 @@ public:
 	
 	UPROPERTY(BlueprintAssignable, Category = "Arcane|GAS")
 	FOnArcaneAbilityCommitted OnAbilityCommitted;
+	
+	// 按 AbilityID 找到已授予的能力；反作弊 RPC 用它定位对应 Spec。
+	// 找不到返回 nullptr，OutHandle 置空。
+	UArcaneGameplayAbility* FindAbilityByAbilityID(FName AbilityID, FGameplayAbilitySpecHandle& OutHandle) const;
 	
 protected:
 	// Called when the game starts

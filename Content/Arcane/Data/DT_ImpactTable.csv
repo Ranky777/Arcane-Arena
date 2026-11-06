@@ -1,0 +1,5 @@
+﻿---,DisplacementKind,DirectionMode,HorizontalImpulse,VerticalImpulse,DisplacementDuration,FalloffCurve,StatusTags,StatusDuration,HitPause,HitReactionTag,GameplayCueTags
+IMP_SoftKnock,Knockback,AlongHitNormal,500,250,0.2,,(GameplayTags=()),,0,Reaction.Light,(GameplayTags=())
+IMP_HeavyKnock,Knockup,AlongHitNormal,900,600,0.6,,(GameplayTags=(Status.Stun)),0.6,0.05,Reaction.Heavy,(GameplayTags=())
+IMP_None,None,None,0,0,0,,(GameplayTags=()),0,0,,(GameplayTags=())
+IMP_BoltKnock,Knockback,AwayFromSource,650,220,0.25,,(GameplayTags=()),,0.03,Reaction.Light,(GameplayTags=())
